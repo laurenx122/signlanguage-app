@@ -1,0 +1,25 @@
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Node.js
+mobile-app/SignLanguageApp/node_modules/
+mobile-app/SignLanguageApp/.expo/
+mobile-app/SignLanguageApp/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Models and large files
+*.h5
+*.keras
+*.pkl
+*.model
+
+# IDE
+.vscode/
+.idea/

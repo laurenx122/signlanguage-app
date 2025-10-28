@@ -1,0 +1,9 @@
+# backend/requirements.txt
+flask==2.3.3
+flask-cors==4.0.0
+tensorflow==2.13.0
+mediapipe==0.10.0
+opencv-python==4.8.0.74
+numpy==1.24.3
+scikit-learn==1.3.0
+python-socketio==5.8.0
