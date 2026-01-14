@@ -46,13 +46,13 @@ def mirror_sequence(seq):
     mirrored[:, :63], mirrored[:, 63:] = mirrored[:, 63:], mirrored[:, :63]
     return mirrored
 
-def normalize(seq):
-    """Scale sequence to [-1,1] per sample for stability"""
-    max_val = np.max(seq)
-    min_val = np.min(seq)
-    if max_val - min_val == 0:
-        return seq
-    return 2 * (seq - min_val) / (max_val - min_val) - 1
+# def normalize(seq):
+#     """Scale sequence to [-1,1] per sample for stability"""
+#     max_val = np.max(seq)
+#     min_val = np.min(seq)
+#     if max_val - min_val == 0:
+#         return seq
+#     return 2 * (seq - min_val) / (max_val - min_val) - 1
 
 # =========================
 # LOAD DATA + AUGMENT
@@ -70,6 +70,8 @@ for label in sorted(os.listdir(DATA_PATH)):
 
     label_map[label] = label_index
 
+
+
     for file in os.listdir(label_dir):
         if not file.endswith(".npy"):
             continue
@@ -79,7 +81,7 @@ for label in sorted(os.listdir(DATA_PATH)):
             continue
 
         # 1️⃣ Normalize original sequence
-        seq = normalize(seq)
+        # seq = normalize(seq)
 
         # 2️⃣ Append original
         X_data.append(seq)
@@ -105,6 +107,10 @@ for label in sorted(os.listdir(DATA_PATH)):
 
     label_index += 1
 
+os.makedirs("models/lstm", exist_ok=True)
+np.save("models/lstm/label_map.npy", label_map)
+
+
 # Convert to tensors
 X = torch.tensor(np.array(X_data), dtype=torch.float32)
 y = torch.tensor(np.array(y_data), dtype=torch.long)
@@ -120,7 +126,14 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_classes):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, 2, batch_first=True, dropout=0.2)
+        
+        self.lstm = nn.LSTM(
+            input_size,
+            hidden_size,
+            2,
+            batch_first=True,
+            dropout=0.2
+        )
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
@@ -131,6 +144,10 @@ model = LSTMModel(FEATURES, 128, len(label_map)).to(DEVICE)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+print("Classes:", label_map)
+print("Num classes:", len(label_map))
+print("Unique labels in y:", set(y_data))
+
 
 # =========================
 # TRAIN

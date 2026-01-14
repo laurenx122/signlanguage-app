@@ -10,22 +10,55 @@ from tts.tts_engine import speak
 import torch.nn.functional as F
 
 # =========================
+# LANDMARK NORMALIZATION
+# =========================
+def normalize_hand_landmarks(hand_landmarks):
+    coords = []
+
+    for lm in hand_landmarks.landmark:
+        coords.append([lm.x, lm.y, lm.z])
+
+    coords = np.array(coords)
+
+    # Center at wrist
+    wrist = coords[0]
+    coords = coords - wrist
+
+    # Scale by hand size
+    hand_size = np.linalg.norm(coords[9][:2])
+    if hand_size > 0:
+        coords[:, :3] /= hand_size
+
+    return coords.flatten().tolist()
+
+# =========================
 # CONFIG
 # =========================
 SEQ_LEN = 60
 FEATURES = 126
 CONF_THRESHOLD = 0.70
 SPEECH_DELAY = 1.5
+SMOOTHING_WINDOW = 8
+UNKNOWN_LABEL = "Unknown"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_PATH = "models/lstm/lstm_model.pth"
 LABELS_CSV = "data/raw/fsl105/labels.csv"
 
-# =========================
-# LOAD LABELS
-# =========================
 df = pd.read_csv(LABELS_CSV)
-LABEL_MAP = dict(zip(df["id"], df["label"]))
+
+# id (int) -> label (text)
+IDX_TO_LABEL = dict(zip(df["id"], df["label"]))
+
+
+
+# LABEL_MAP_PATH = "models/lstm/label_map.npy"
+
+# # =========================
+# # LOAD LABEL MAP
+# # =========================
+# label_map = np.load(LABEL_MAP_PATH, allow_pickle=True).item()
+# IDX_TO_LABEL = {v: k for k, v in label_map.items()}
 
 # =========================
 # MODEL
@@ -33,14 +66,20 @@ LABEL_MAP = dict(zip(df["id"], df["label"]))
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_classes):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, 2, batch_first=True)
+        self.lstm = nn.LSTM(
+            input_size,
+            hidden_size,
+            num_layers=2,
+            batch_first=True,
+            dropout=0.2
+        )
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
         _, (hn, _) = self.lstm(x)
         return self.fc(hn[-1])
 
-model = LSTMModel(FEATURES, 128, len(LABEL_MAP))
+model = LSTMModel(FEATURES, 128, len(IDX_TO_LABEL))
 model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
 model.to(DEVICE)
 model.eval()
@@ -63,6 +102,7 @@ mp_draw = mp.solutions.drawing_utils
 # BUFFERS
 # =========================
 sequence = deque(maxlen=SEQ_LEN)
+prediction_buffer = deque(maxlen=SMOOTHING_WINDOW)
 last_spoken = ""
 last_spoken_time = 0
 
@@ -99,51 +139,68 @@ while cap.isOpened():
     # LEFT HAND
     if left_hand:
         mp_draw.draw_landmarks(frame, left_hand, mp_hands.HAND_CONNECTIONS)
-        base = left_hand.landmark[0]
-        for lm in left_hand.landmark:
-            features.extend([lm.x - base.x, lm.y - base.y, lm.z - base.z])
+        features.extend(normalize_hand_landmarks(left_hand))
     else:
         features.extend([0.0] * 63)
 
     # RIGHT HAND
     if right_hand:
         mp_draw.draw_landmarks(frame, right_hand, mp_hands.HAND_CONNECTIONS)
-        base = right_hand.landmark[0]
-        for lm in right_hand.landmark:
-            features.extend([lm.x - base.x, lm.y - base.y, lm.z - base.z])
+        features.extend(normalize_hand_landmarks(right_hand))
     else:
         features.extend([0.0] * 63)
 
     sequence.append(features)
-    predicted_text = ""
 
+    predicted_text = UNKNOWN_LABEL
+    conf = 0.0
+
+    # =========================
+    # PREDICTION
+    # =========================
     if len(sequence) == SEQ_LEN:
         X = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(DEVICE)
 
         with torch.no_grad():
             probs = F.softmax(model(X), dim=1)
-            conf, idx = torch.max(probs, dim=1)
+            conf_tensor, idx_tensor = torch.max(probs, dim=1)
 
-        if conf.item() > CONF_THRESHOLD:
-            predicted_text = LABEL_MAP.get(idx.item(), "")
+        conf = conf_tensor.item()
+        idx = idx_tensor.item()
+        
 
-            current_time = time.time()
-            if (
-                predicted_text
-                and predicted_text != last_spoken
-                and current_time - last_spoken_time > SPEECH_DELAY
-            ):
-                speak(predicted_text)
-                last_spoken = predicted_text
-                last_spoken_time = current_time
+        if conf > CONF_THRESHOLD:
+            prediction_buffer.append(idx)
+            most_common = max(set(prediction_buffer), key=prediction_buffer.count)
+            predicted_text = IDX_TO_LABEL.get(most_common, UNKNOWN_LABEL)
+        else:
+            predicted_text = UNKNOWN_LABEL
+
+        # =========================
+        # SPEECH OUTPUT
+        # =========================
+        current_time = time.time()
+        if (
+            predicted_text != UNKNOWN_LABEL
+            and predicted_text != last_spoken
+            and current_time - last_spoken_time > SPEECH_DELAY
+        ):
+            speak(predicted_text)
+            last_spoken = predicted_text
+            last_spoken_time = current_time
+
+    # =========================
+    # DISPLAY
+    # =========================
+    color = (0, 255, 0) if conf > CONF_THRESHOLD else (0, 0, 255)
 
     cv2.putText(
         frame,
-        f"Sign: {predicted_text}",
+        f"Sign: {predicted_text} ({conf*100:.1f}%)",
         (30, 50),
         cv2.FONT_HERSHEY_SIMPLEX,
         1,
-        (0, 255, 0),
+        color,
         2
     )
 

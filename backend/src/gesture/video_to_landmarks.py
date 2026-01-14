@@ -4,6 +4,32 @@ import mediapipe as mp
 import numpy as np
 import pandas as pd
 
+def normalize_hand_landmarks(hand_landmarks):
+    """
+    hand_landmarks: mediapipe hand landmarks (21 points)
+    returns: list of 63 normalized values
+    """
+    coords = []
+
+    # Extract landmarks into array
+    for lm in hand_landmarks.landmark:
+        coords.append([lm.x, lm.y, lm.z])
+
+    coords = np.array(coords)  # (21, 3)
+
+    # 1. Center at wrist
+    wrist = coords[0]
+    coords = coords - wrist
+
+    # 2. Scale by hand size (use middle finger MCP = index 9)
+    hand_size = np.linalg.norm(coords[9][:2])
+    
+    if hand_size > 0:
+        coords[:, :3] /= hand_size
+
+    return coords.flatten().tolist()
+
+
 # =========================
 # CONFIG
 # =========================
@@ -68,28 +94,38 @@ for _, row in df.iterrows():
         features = []
 
         # -------- LEFT HAND --------
+        # if left_hand:
+        #     base = left_hand.landmark[0]
+        #     for lm in left_hand.landmark:
+        #         features.extend([
+        #             lm.x - base.x,
+        #             lm.y - base.y,
+        #             lm.z - base.z
+        #         ])
+        # else:
+        #     features.extend([0.0] * 63)
         if left_hand:
-            base = left_hand.landmark[0]
-            for lm in left_hand.landmark:
-                features.extend([
-                    lm.x - base.x,
-                    lm.y - base.y,
-                    lm.z - base.z
-                ])
+            features.extend(normalize_hand_landmarks(left_hand))
         else:
             features.extend([0.0] * 63)
 
+
         # -------- RIGHT HAND --------
+        # if right_hand:
+        #     base = right_hand.landmark[0]
+        #     for lm in right_hand.landmark:
+        #         features.extend([
+        #             lm.x - base.x,
+        #             lm.y - base.y,
+        #             lm.z - base.z
+        #         ])
+        # else:
+        #     features.extend([0.0] * 63)
         if right_hand:
-            base = right_hand.landmark[0]
-            for lm in right_hand.landmark:
-                features.extend([
-                    lm.x - base.x,
-                    lm.y - base.y,
-                    lm.z - base.z
-                ])
+            features.extend(normalize_hand_landmarks(right_hand))
         else:
             features.extend([0.0] * 63)
+
 
         frames.append(features)
 
@@ -115,3 +151,5 @@ for _, row in df.iterrows():
     np.save(out_path, sequence)
 
 print("✅ Two-hand SEQUENTIAL landmark extraction complete")
+print(np.min(sequence), np.max(sequence))
+
