@@ -1,0 +1,46 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# =========================
+# Virtual Environment
+# =========================
+venv/
+.env
+
+# =========================
+# OS / Editor
+# =========================
+.vscode/*
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# =========================
+# Data (RAW & GENERATED)
+# =========================
+data/raw/**/*
+data/processed/**/*
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.png
+*.wav
+
+# =========================
+# Models & Checkpoints
+# =========================
+models/**/*.pth
+models/**/*.pt
+models/**/*.onnx
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
