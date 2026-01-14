@@ -40,6 +40,9 @@ CONF_THRESHOLD = 0.70
 SPEECH_DELAY = 1.5
 SMOOTHING_WINDOW = 8
 UNKNOWN_LABEL = "Unknown"
+STABLE_FRAMES_REQUIRED = 12   # ~0.4 sec @ 30 FPS
+MOTION_THRESHOLD = 0.015     # lower = stricter
+
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_PATH = "models/lstm/lstm_model.pth"
@@ -59,6 +62,18 @@ IDX_TO_LABEL = dict(zip(df["id"], df["label"]))
 # # =========================
 # label_map = np.load(LABEL_MAP_PATH, allow_pickle=True).item()
 # IDX_TO_LABEL = {v: k for k, v in label_map.items()}
+
+# =========================
+# HELPER FUNCTIONS
+# =========================
+#HAND MOTION MEASUREMNT
+def compute_motion(curr, prev):
+    if prev is None:
+        return float("inf")
+    curr = np.array(curr)
+    prev = np.array(prev)
+    return np.mean(np.abs(curr - prev))
+
 
 # =========================
 # MODEL
@@ -105,6 +120,10 @@ sequence = deque(maxlen=SEQ_LEN)
 prediction_buffer = deque(maxlen=SMOOTHING_WINDOW)
 last_spoken = ""
 last_spoken_time = 0
+stable_count = 0
+last_predicted_idx = None
+prev_features = None
+
 
 # =========================
 # WEBCAM
@@ -135,6 +154,13 @@ while cap.isOpened():
                 left_hand = hand_lm
             else:
                 right_hand = hand_lm
+
+    #IF NOT LEFT AND RIGHT HANDS
+    if not left_hand and not right_hand:
+        prediction_buffer.clear()
+        predicted_text = UNKNOWN_LABEL
+        conf = 0.0
+
 
     # LEFT HAND
     if left_hand:
@@ -167,27 +193,60 @@ while cap.isOpened():
 
         conf = conf_tensor.item()
         idx = idx_tensor.item()
-        
 
-        if conf > CONF_THRESHOLD:
-            prediction_buffer.append(idx)
-            most_common = max(set(prediction_buffer), key=prediction_buffer.count)
-            predicted_text = IDX_TO_LABEL.get(most_common, UNKNOWN_LABEL)
+        # Motion estimation
+        motion = compute_motion(features, prev_features)
+        prev_features = features
+
+        if conf >= CONF_THRESHOLD:
+            if idx == last_predicted_idx and motion < MOTION_THRESHOLD:
+                stable_count += 1
+            else:
+                stable_count = 0
+
+            last_predicted_idx = idx
+        else:
+            stable_count = 0
+            last_predicted_idx = None
+            predicted_text = UNKNOWN_LABEL
+
+        # CONFIRM SIGN
+        if stable_count >= STABLE_FRAMES_REQUIRED:
+            predicted_text = IDX_TO_LABEL.get(idx, UNKNOWN_LABEL)
+
+            current_time = time.time()
+            if (
+                predicted_text != last_spoken
+                and current_time - last_spoken_time > SPEECH_DELAY
+            ):
+                speak(predicted_text)
+                last_spoken = predicted_text
+                last_spoken_time = current_time
         else:
             predicted_text = UNKNOWN_LABEL
 
-        # =========================
-        # SPEECH OUTPUT
-        # =========================
-        current_time = time.time()
-        if (
-            predicted_text != UNKNOWN_LABEL
-            and predicted_text != last_spoken
-            and current_time - last_spoken_time > SPEECH_DELAY
-        ):
-            speak(predicted_text)
-            last_spoken = predicted_text
-            last_spoken_time = current_time
+
+    else:
+        # No hands → reset everything
+        prediction_buffer.clear()
+        predicted_text = UNKNOWN_LABEL
+        conf = 0.0
+
+    # =========================
+    # SPEECH OUTPUT
+    # =========================
+    current_time = time.time()
+
+    if (
+        predicted_text != UNKNOWN_LABEL
+        and predicted_text != last_spoken
+        and conf >= 0.60
+        and current_time - last_spoken_time > 1.5
+    ):
+        speak(predicted_text)
+        last_spoken = predicted_text
+        last_spoken_time = current_time
+
 
     # =========================
     # DISPLAY

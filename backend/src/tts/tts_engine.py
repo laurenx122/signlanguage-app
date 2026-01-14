@@ -1,13 +1,25 @@
-import pyttsx3
+from TTS.api import TTS
+import sounddevice as sd
+import threading
 
-engine = pyttsx3.init()
+tts = TTS(
+    model_name="tts_models/en/ljspeech/tacotron2-DDC",
+    progress_bar=False,
+    gpu=False
+)
 
-# Optional voice tuning
-engine.setProperty("rate", 150)
-engine.setProperty("volume", 1.0)
+def _play_audio(text):
+    audio = tts.tts(text)
+    sd.play(audio, samplerate=tts.synthesizer.output_sample_rate)
+    sd.wait()
 
 def speak(text):
     if not text:
         return
-    engine.say(text)
-    engine.runAndWait()
+
+    # Run speech in background thread
+    threading.Thread(
+        target=_play_audio,
+        args=(text,),
+        daemon=True
+    ).start()
