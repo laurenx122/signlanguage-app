@@ -24,7 +24,7 @@ Thumbs.db
 # Data (RAW & GENERATED)
 # =========================
 data/raw/**/*
-data/processed/**/*
+data/processed_sequences/**/*
 *.mp4
 *.avi
 *.mov
