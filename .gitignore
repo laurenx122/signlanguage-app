@@ -46,3 +46,8 @@ models/
 # --- OS Specific ---
 .DS_Store
 Thumbs.db
+backend/data/processed/fsl_landmarks_X.npy
+backend/data/processed/fsl_labels_y.npy
+backend/data/processed/fsl_dynamic/sequences_X.npy
+backend/data/processed/fsl_dynamic/labels_y.npy
+backend/data/processed/fsl_class_to_idx.npy
