@@ -1,5 +1,5 @@
 """
-train_fsl_dynamic_14_enhanced.py
+train_fsl_dynamic.py
 Enhanced LSTM training with Train/Test split and detailed TP/FP/TN/FN metrics
 Location: D:/SMS/backend/src/gesture/train_fsl_dynamic_12_enhanced.py
 """
@@ -20,9 +20,11 @@ from sklearn.model_selection import train_test_split
 import json
 
 # Configuration
-PROJECT_ROOT = Path("D:/SMS/backend")
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parents[2] 
 DATA_DIR = PROJECT_ROOT / 'data' / 'processed' / 'fsl_dynamic_12'
 MODEL_DIR = PROJECT_ROOT / 'models' / 'lstm_dynamic_14'
+
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 # Training parameters

@@ -11,11 +11,16 @@ import torch.nn as nn
 import mediapipe as mp
 from pathlib import Path
 import time
+from collections import deque, Counter #buffer logic
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "lstm" / "best_fsl_lstm_model.pth"
+MODEL_PATH = PROJECT_ROOT / "models" / "lstm_static" / "best_fsl_lstm_model.pth"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# --- STABILITY BUFFER SETTINGS ---
+PREDICTION_BUFFER_SIZE = 10  # Stores the last 10 frames of predictions
+prediction_buffer = deque(maxlen=PREDICTION_BUFFER_SIZE)
 
 # Global variables
 _model = None
@@ -183,22 +188,28 @@ def predict(landmarks, confidence_threshold=0.6):
     return pred_class, confidence
 
 
-def draw_info(frame, prediction, confidence, fps):
+def draw_info(frame, prediction, confidence, fps, buffered_sign):
     """Draw prediction info on frame"""
     # Background for text
-    cv2.rectangle(frame, (10, 10), (400, 120), (0, 0, 0), -1)
+    # cv2.rectangle(frame, (10, 10), (400, 120), (0, 0, 0), -1)
+    cv2.rectangle(frame, (10, 10), (450, 150), (0, 0, 0), -1)
     
     # Prediction
     color = (0, 255, 0) if prediction != "UNKNOWN" else (0, 165, 255)
     cv2.putText(frame, f"Sign: {prediction}", (20, 50), 
                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
     
+    # Show the "Stable" buffered guess (Large bold text)
+    color = (0, 255, 0) if buffered_sign != "UNKNOWN" else (0, 165, 255)
+    cv2.putText(frame, f"Buffered Sign: {buffered_sign}", (20, 90), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 4)
+    
     # Confidence
-    cv2.putText(frame, f"Confidence: {confidence:.2%}", (20, 85), 
+    cv2.putText(frame, f"Confidence: {confidence:.2%}", (20, 120), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     
     # FPS
-    cv2.putText(frame, f"FPS: {fps:.1f}", (20, 110), 
+    cv2.putText(frame, f"FPS: {fps:.1f}", (20, 140), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     
     # Instructions
@@ -269,7 +280,18 @@ def main():
         landmarks = extract_landmarks(results)
         if landmarks is not None:
             prediction, confidence = predict(landmarks, confidence_threshold=0.6)
+            # Add current prediction to buffer
+            prediction_buffer.append(prediction)
+        else:
+            prediction_buffer.append("UNKNOWN")
         
+        # CALCULATE STABLE SIGN: Find the most common item in the buffer
+        if len(prediction_buffer) > 0:
+            most_common = Counter(prediction_buffer).most_common(1)
+            buffered_sign = most_common[0][0]
+        else:
+            buffered_sign = "UNKNOWN"
+
         # Calculate FPS
         fps_counter += 1
         if fps_counter >= 10:
@@ -278,7 +300,7 @@ def main():
             fps_start_time = time.time()
         
         # Draw info on frame
-        draw_info(frame, prediction, confidence, fps)
+        draw_info(frame, prediction, confidence, fps, buffered_sign)
         
         # Display
         cv2.imshow('FSL Webcam Test', frame)
