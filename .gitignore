@@ -77,3 +77,6 @@ backend/data/processed/fsl_dynamic_12/sequences_X.npy
 backend/requirementsXX.txt
 backend/requirements.txt
 backend/requirements.txt
+
+/backend/runs_static/
+/backend/runs_dynamic/
