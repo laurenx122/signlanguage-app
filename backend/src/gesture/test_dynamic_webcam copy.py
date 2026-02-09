@@ -1,17 +1,15 @@
 """
-test_dynamic_webcam.py
-Real-time FSL dynamic sign language recognition with TTS
+test_dynamic_webcam_14.py
+Real-time testing for 14-gesture dynamic model
+Location: D:/SMS/backend/src/gesture/test_dynamic_webcam_14.py
 """
-import sys
-import os
+
 import cv2
 import time
-import numpy as np
+import sys
 from pathlib import Path
 from collections import deque, Counter
-
-sys.path.append(str(Path(__file__).parent.parent))
-from tts.tts_engine import CoquiTTS
+import numpy as np
 
 # Import inference functions
 from fsl_dynamic_inference import (
@@ -23,19 +21,19 @@ from fsl_dynamic_inference import (
 )
 
 
-class GestureStabilizer:
+class LongGestureStabilizer:
     """
-    Stabilizer for dynamic gestures with improved prediction stability
+    Stabilizer for multi-movement gestures (optimized for 14 gestures)
     """
     
     def __init__(
         self,
-        confidence_threshold=0.55,      # Lowered slightly
-        stability_window=12,             # Reduced window
-        min_stable_count=8,             # Reduced requirement
-        hold_duration=1.5,               # REDUCED from 2.0 to 1.0 ← KEY FIX
-        min_gesture_frames=8,           # REDUCED from 18 to 12 ← KEY FIX
-        max_no_hands_frames=5           # Faster reset
+        confidence_threshold=0.50,      # Adjusted threshold
+        stability_window=20,
+        min_stable_count=12,
+        hold_duration=1.5,
+        min_gesture_frames=15,
+        max_no_hands_frames=10
     ):
         self.confidence_threshold = confidence_threshold
         self.stability_window = stability_window
@@ -59,11 +57,8 @@ class GestureStabilizer:
         self.no_hands_counter = 0
         self.total_frames_seen = 0
         
-        # Last announced prediction (to avoid repeating)
-        self.last_announced = None
-        
-    def stabilize(self, prediction, confidence, top3_labels, top3_confs, hands_detected=True):
-        """Stabilize predictions with enhanced logic"""
+    def stabilize(self, prediction, confidence, top3, hands_detected=True):
+        """Stabilize predictions with top-3 awareness"""
         current_time = time.time()
         
         self.total_frames_seen += 1
@@ -93,38 +88,20 @@ class GestureStabilizer:
                     'gesture_duration': current_time - self.gesture_start_time if self.gesture_start_time else 0,
                     'raw_prediction': prediction,
                     'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': False
+                    'top3': top3
                 }
             else:
-                # TIME EXPIRED - RESET FOR NEW GESTURE ← KEY FIX
                 if gesture_ended:
                     self._reset_for_new_gesture()
-                    return {
-                        'prediction': 'WAITING',
-                        'confidence': 0.0,
-                        'status': 'WAITING',
-                        'raw_prediction': prediction,
-                        'raw_confidence': confidence,
-                        'top3_labels': top3_labels,
-                        'top3_confs': top3_confs,
-                        'should_announce': False
-                    }
                 
-                # If hands still present, allow new gesture without resetting
-                self.current_stable = None
-                self.stable_since = None
-                # return {
-                #     'prediction': self.current_stable,
-                #     'confidence': self.stable_confidence,
-                #     'status': 'COMPLETE',
-                #     'raw_prediction': prediction,
-                #     'raw_confidence': confidence,
-                #     'top3_labels': top3_labels,
-                #     'top3_confs': top3_confs,
-                #     'should_announce': False
-                # }
+                return {
+                    'prediction': self.current_stable,
+                    'confidence': self.stable_confidence,
+                    'status': 'COMPLETE',
+                    'raw_prediction': prediction,
+                    'raw_confidence': confidence,
+                    'top3': top3
+                }
         
         # Gesture ended - analyze
         if gesture_ended and self.gesture_active and len(self.prediction_history) >= self.min_gesture_frames:
@@ -136,11 +113,6 @@ class GestureStabilizer:
                 self.stable_confidence = result['confidence']
                 self.gesture_active = False
                 
-                # Check if this is a new prediction (for TTS) ← KEY FIX
-                should_announce = (self.current_stable != self.last_announced)
-                if should_announce:
-                    self.last_announced = self.current_stable
-                
                 return {
                     'prediction': result['prediction'],
                     'confidence': result['confidence'],
@@ -149,105 +121,54 @@ class GestureStabilizer:
                     'gesture_duration': current_time - self.gesture_start_time if self.gesture_start_time else 0,
                     'raw_prediction': prediction,
                     'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': should_announce
+                    'top3': top3
                 }
         
         # Reset if hands gone
-        if gesture_ended:
-            self.manual_reset()
+        if gesture_ended and self.gesture_active:
+            self._reset_for_new_gesture()
             return {
                 'prediction': 'WAITING',
                 'confidence': 0.0,
-                'status': 'WAITING',
+                'status': 'RESET',
                 'raw_prediction': prediction,
                 'raw_confidence': confidence,
-                'top3_labels': [],
-                'top3_confs': [],
-                'should_announce': False
+                'top3': top3
             }
-
         
         # Collecting predictions
         if self.gesture_active and hands_detected:
-
-            # Store predictions
-            if confidence >= self.confidence_threshold and prediction not in ["UNKNOWN", "Buffering..."]:
+            if confidence >= self.confidence_threshold and prediction != "UNKNOWN":
                 self.prediction_history.append(prediction)
                 self.confidence_history.append(confidence)
-
-            # Not enough frames yet
-            if len(self.prediction_history) < self.min_gesture_frames:
+            
+            if len(self.prediction_history) > 0:
+                vote_counts = Counter(self.prediction_history)
+                most_common, vote_count = vote_counts.most_common(1)[0]
+                
                 return {
-                    'prediction': 'COLLECTING...',
+                    'prediction': most_common,
                     'confidence': confidence,
                     'status': 'COLLECTING',
                     'buffer': f"{len(self.prediction_history)}/{self.min_gesture_frames}",
+                    'votes': f"{vote_count}/{len(self.prediction_history)}",
+                    'gesture_duration': current_time - self.gesture_start_time if self.gesture_start_time else 0,
                     'raw_prediction': prediction,
                     'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': False
+                    'top3': top3
                 }
-
-            # Enough frames → check dominant label
-            vote_counts = Counter(self.prediction_history)
-            dominant_label, vote_count = vote_counts.most_common(1)[0]
-            dominance = vote_count / len(self.prediction_history)
-
-            # 🎯 NEW GESTURE DETECTED
-            if dominance >= 0.6:
-
-
-                self.current_stable = dominant_label
-                self.stable_confidence = np.mean(self.confidence_history)
-                self.stable_since = current_time
-                self.prediction_history.clear()
-                self.confidence_history.clear()
-
-                should_announce = (dominant_label != self.last_announced)
-                if should_announce:
-                    self.last_announced = dominant_label
-
-                return {
-                    'prediction': dominant_label,
-                    'confidence': self.stable_confidence,
-                    'status': 'STABLE',
-                    'raw_prediction': prediction,
-                    'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': should_announce
-                }
-
-            # Still same gesture
-            return {
-                'prediction': self.current_stable if self.current_stable else dominant_label,
-                'confidence': confidence,
-                'status': 'COLLECTING',
-                'buffer': f"{len(self.prediction_history)}/{self.min_gesture_frames}",
-                'raw_prediction': prediction,
-                'raw_confidence': confidence,
-                'top3_labels': top3_labels,
-                'top3_confs': top3_confs,
-                'should_announce': False
-            }
         
         return {
-        'prediction': 'WAITING',
-        'confidence': 0.0,
-        'status': 'WAITING',
-        'raw_prediction': prediction,
-        'raw_confidence': confidence,
-        'top3_labels': top3_labels,
-        'top3_confs': top3_confs,
-        'should_announce': False
-    }
-
+            'prediction': 'WAITING',
+            'confidence': 0.0,
+            'status': 'WAITING',
+            'raw_prediction': prediction,
+            'raw_confidence': confidence,
+            'top3': top3
+        }
     
     def _analyze_gesture(self):
-        """Analyze complete gesture with weighted voting"""
+        """Analyze complete gesture"""
         if len(self.prediction_history) < self.min_gesture_frames:
             return None
         
@@ -257,8 +178,7 @@ class GestureStabilizer:
         
         consensus_ratio = vote_count / len(self.prediction_history)
         
-        # LOWERED consensus requirement from 70% to 60% ← KEY FIX
-        if consensus_ratio >= 0.60:
+        if consensus_ratio >= 0.6:
             avg_confidence = np.mean([
                 conf for pred, conf in zip(self.prediction_history, self.confidence_history)
                 if pred == most_common
@@ -278,7 +198,6 @@ class GestureStabilizer:
             vote_counts_2nd = Counter(second_half)
             most_common_2nd, vote_count_2nd = vote_counts_2nd.most_common(1)[0]
             
-            # LOWERED from 65% to 55% ← KEY FIX
             if vote_count_2nd / len(second_half) >= 0.55:
                 avg_confidence = np.mean([
                     conf for pred, conf in zip(
@@ -303,26 +222,23 @@ class GestureStabilizer:
         self.gesture_start_time = None
         self.no_hands_counter = 0
         self.total_frames_seen = 0
-        # DON'T reset last_announced here - only in manual_reset ← KEY FIX
     
     def manual_reset(self):
-        """Manual reset including announcement history"""
+        """Manual reset"""
         self._reset_for_new_gesture()
         self.current_stable = None
         self.stable_since = None
         self.stable_confidence = 0.0
-        self.last_announced = None  # ← Only reset here
 
 
 def draw_ui(frame, result, hands_detected, fps, buffer_info):
-    """Draw UI matching the 14-gesture version style"""
+    """Draw UI with enhanced information"""
     h, w, _ = frame.shape
 
     prediction = result['prediction']
     confidence = result['confidence']
     status = result['status']
-    top3_labels = result.get('top3_labels', [])
-    top3_confs = result.get('top3_confs', [])
+    top3 = result.get('top3', [])
 
     status_colors = {
         'WAITING': (180, 180, 180),
@@ -335,7 +251,7 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info):
 
     color = status_colors.get(status, (255, 255, 255))
 
-    # Top progress bar (if collecting)
+    # Top progress bar
     if 'buffer' in result:
         cur, total = map(int, result['buffer'].split('/'))
         progress = min(cur / total, 1.0)
@@ -343,7 +259,7 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info):
 
         cv2.rectangle(frame, (20, 15), (20 + int(w * 0.6), 35), (50, 50, 50), -1)
         cv2.rectangle(frame, (20, 15), (20 + bar_w, 35), (0, 165, 255), -1)
-        cv2.putText(frame, f"{cur}/{total} frames", (25, 33),
+        cv2.putText(frame, f"{cur}/{total}", (25, 33),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     # Main prediction box
@@ -353,65 +269,57 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info):
     cv2.rectangle(frame, (box_x, box_y), (box_x + box_w, box_y + box_h), (20, 20, 20), -1)
     cv2.rectangle(frame, (box_x, box_y), (box_x + box_w, box_y + box_h), color, 2)
 
-    # Main prediction (LABEL, not ID)
+    # Main prediction
     cv2.putText(frame, prediction, (box_x + 15, box_y + 45),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
 
-    # Confidence
     cv2.putText(frame, f"{confidence:.1%}", (box_x + 15, box_y + 85),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
 
-    # Status
     cv2.putText(frame, status, (box_x + 350, box_y + 85),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-    # Top-3 predictions (LABELS, not IDs)
-    if len(top3_labels) > 0:
+    # Top-3 predictions
+    if len(top3) > 0:
         cv2.putText(frame, "Top-3:", (box_x + 15, box_y + 120),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
         
         y_offset = 140
-        for i, (label, conf) in enumerate(zip(top3_labels[:3], top3_confs[:3])):
+        for i, (label, conf) in enumerate(top3[:3]):
             text = f"{i+1}. {label} ({conf:.1%})"
             cv2.putText(frame, text, (box_x + 25, box_y + y_offset),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
             y_offset += 20
 
-    # Buffer info (top right)
+    # Buffer info
     cv2.putText(frame, f"Buffer: {buffer_info['current']}/{buffer_info['max']}", 
                 (w - 200, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 100), 2)
 
-    # FPS (top left)
+    # FPS + Hand indicator
     cv2.putText(frame, f"FPS: {fps:.1f}", (20, 70),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 100), 2)
 
-    # Hand detection indicator
     hand_color = (0, 255, 0) if hands_detected else (0, 0, 255)
     cv2.circle(frame, (120, 55), 8, hand_color, -1)
 
 
 def main():
     print("="*70)
-    print("🎥 FSL DYNAMIC SIGN LANGUAGE RECOGNITION")
-    print("   Real-time recognition with Text-to-Speech")
+    print("🎥 FSL - 14 GESTURE DYNAMIC RECOGNITION")
+    print("   GOOD MORNING, HELLO, THANK YOU, etc.")
     print("="*70)
     
     # Initialize model
     initialize_dynamic_model()
     
-    # Initialize TTS
-    print("\n🔊 Initializing Coqui TTS...")
-    tts = CoquiTTS()
-    print("✅ TTS ready")
-    
-    # Create stabilizer with FASTER settings ← KEY FIX
-    stabilizer = GestureStabilizer(
-        confidence_threshold=0.55,
-        stability_window=20,
-        min_stable_count=12,
-        hold_duration=1.0,        # ← Reduced from 2.0
-        min_gesture_frames=12,    # ← Reduced from 18
-        max_no_hands_frames=10
+    # Create stabilizer
+    stabilizer = LongGestureStabilizer(
+        confidence_threshold=0.50,
+        stability_window=30,
+        min_stable_count=18,
+        hold_duration=1.5,
+        min_gesture_frames=15,
+        max_no_hands_frames=15
     )
     
     # Open webcam
@@ -420,7 +328,6 @@ def main():
         print("❌ Cannot open webcam")
         return
     
-    # Set camera properties
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     cap.set(cv2.CAP_PROP_FPS, 30)
@@ -428,13 +335,14 @@ def main():
     print("\n✅ Webcam ready")
     print("\n📋 Instructions:")
     print("  1. Position hands in view")
-    print("  2. Perform gesture (will lock FASTER now)")
-    print("  3. Drop hands briefly between signs")
-    print("  4. Result shown & spoken")
+    print("  2. Perform complete gesture")
+    print("  3. System collects predictions")
+    print("  4. Drop hands when done")
+    print("  5. Result shown after analysis")
     print("\n💡 Tips:")
-    print("  • System now locks after ~0.4 seconds")
-    print("  • Drop hands for 0.3s between signs")
-    print("  • Each new sign will be announced")
+    print("  • Complete ALL movements")
+    print("  • Keep hands visible")
+    print("  • Natural gesture speed")
     print("\n⌨️  Controls:")
     print("  Q - Quit")
     print("  R - Reset")
@@ -447,85 +355,64 @@ def main():
         'prediction': 'WAITING',
         'confidence': 0.0,
         'status': 'WAITING',
-        'top3_labels': [],
-        'top3_confs': [],
-        'should_announce': False
+        'top3': []
     }
     hands_detected = False
     
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Mirror frame
-            frame = cv2.flip(frame, 1)
-            
-            # Add frame to buffer
-            hands_detected = add_frame_to_buffer(frame)
-            
-            # Get buffer info
-            buffer_info = get_buffer_info()
-            
-            # Predict every 2 frames
-            if True:
-                raw_result = predict_dynamic_sign()
-                
-                top1_label = raw_result['top1_label']
-                top1_conf = raw_result['top1_conf']
-                top3_labels = raw_result['top3_labels']
-                top3_confs = raw_result['top3_confs']
-                
-                # Stabilize prediction
-                result = stabilizer.stabilize(
-                    top1_label,
-                    top1_conf,
-                    top3_labels,
-                    top3_confs,
-                    hands_detected=hands_detected
-                )
-                
-                # Text-to-Speech announcement
-                if result['should_announce'] and result['status'] == 'STABLE':
-                    announcement_text = result['prediction']
-                    tts.speak_async(announcement_text)
-                    print(f"\n🔊 Announced: {announcement_text} ({result['confidence']:.1%})")
-            
-            frame_count += 1
-            
-            # FPS calculation
-            fps_counter += 1
-            if fps_counter >= 30:
-                fps = fps_counter / (time.time() - fps_start)
-                fps_counter, fps_start = 0, time.time()
-            
-            # Draw UI
-            draw_ui(frame, result, hands_detected, fps, buffer_info)
-            
-            # Show frame
-            cv2.imshow('FSL Dynamic Sign Recognition', frame)
-            
-            # Handle keypresses
-            key = cv2.waitKey(1) & 0xFF
-            
-            if key == ord('q'):
-                print("\n👋 Exiting...")
-                break
-            elif key == ord('r'):
-                stabilizer.manual_reset()
-                reset_buffer()
-                tts.stop()
-                print("\n🔄 Reset!")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
         
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user")
+        frame = cv2.flip(frame, 1)
+        
+        # Add frame to buffer
+        hands_detected = add_frame_to_buffer(frame)
+        
+        # Get buffer info
+        buffer_info = get_buffer_info()
+        
+        # Predict every 2 frames
+        if frame_count % 2 == 0:
+            raw_result = predict_dynamic_sign()
+            
+            top1_label = raw_result['top1_label']
+            top1_conf = raw_result['top1_conf']
+            top3 = raw_result['top3']
+            
+            # Stabilize
+            result = stabilizer.stabilize(
+                top1_label,
+                top1_conf,
+                top3,
+                hands_detected=hands_detected
+            )
+        
+        frame_count += 1
+        
+        # FPS calculation
+        fps_counter += 1
+        if fps_counter >= 30:
+            fps = fps_counter / (time.time() - fps_start)
+            fps_counter, fps_start = 0, time.time()
+        
+        # Draw UI
+        draw_ui(frame, result, hands_detected, fps, buffer_info)
+        
+        cv2.imshow('FSL - 14 Gesture Recognition', frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        
+        if key == ord('q'):
+            break
+        elif key == ord('r'):
+            stabilizer.manual_reset()
+            reset_buffer()
+            print("🔄 Reset!")
     
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
-        tts.stop()
-        print("\n✅ Done!")
+    cap.release()
+    cv2.destroyAllWindows()
+    print("\n✅ Done!")
 
 
 if __name__ == '__main__':

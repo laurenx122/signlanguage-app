@@ -14,7 +14,7 @@ from tqdm import tqdm
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
-MODEL_DIR = PROJECT_ROOT / 'models' / 'lstm'
+MODEL_DIR = PROJECT_ROOT / 'models' / 'lstm_static'
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 # Training parameters
@@ -150,6 +150,10 @@ def main():
         [train_size, val_size],
         generator=torch.Generator().manual_seed(42)
     )
+
+    print(f"✅ Split Complete:")
+    print(f"(Train): {len(train_dataset)} samples")
+    print(f"(Val):   {val_size} samples")
     
     # Create dataloaders
     train_loader = DataLoader(

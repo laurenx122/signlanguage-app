@@ -1,7 +1,7 @@
 """
-extract_video_frames_filtered.py
+extract_video_frames.py
 Extract features for ONLY the 14 specified gestures
-Location: D:/SMS/backend/src/gesture/extract_video_frames_filtered.py
+Location: D:/SMS/backend/src/gesture/extract_video_frames.py
 """
 
 import cv2
@@ -13,13 +13,16 @@ from tqdm import tqdm
 import pickle
 from collections import Counter
 
-# Configuration
-PROJECT_ROOT = Path("D:/SMS/backend")
+# Configuration (AUTO-DETECT PROJECT ROOT)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]   # → backend folder
+
 DATA_DIR = PROJECT_ROOT / 'data' / 'raw' / 'fsl105'
 TRAIN_CSV = DATA_DIR / 'train.csv'
 LABELS_CSV = DATA_DIR / 'labels.csv'
 OUTPUT_DIR = PROJECT_ROOT / 'data' / 'processed' / 'fsl_dynamic_12'
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # CRITICAL: Only these 14 gestures will be processed
 ALLOWED_GESTURES = [
