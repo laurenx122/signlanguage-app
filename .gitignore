@@ -74,3 +74,6 @@ backend/data/processed/fsl_dynamic_12/sequences_X.npy
 /backend/fsl_env/Lib
 /backend/fsl_env
 /backend/vision_env
+backend/requirementsXX.txt
+backend/requirements.txt
+backend/requirements.txt

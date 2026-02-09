@@ -14,8 +14,8 @@ from collections import deque
 
 # --- Configuration ---
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-MODEL_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_14' / 'final_model_complete.pth'
-LABEL_MAP_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_14' / 'label_mapping.json'
+MODEL_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_final' / 'final_model_complete.pth'
+LABEL_MAP_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_final' / 'label_mapping.json'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # --- Model Architecture ---
