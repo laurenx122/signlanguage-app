@@ -80,3 +80,4 @@ backend/requirements.txt
 
 /backend/runs_static/
 /backend/runs_dynamic/
+/backend/venv_before
