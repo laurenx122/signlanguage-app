@@ -2,28 +2,31 @@
 import os
 import torch
 import threading
+import uuid
+import time
+import glob
 from TTS.api import TTS
-import playsound
+import pygame  # ← CHANGED FROM playsound
 
 # ------------------ ESPEAK SETUP ------------------
 ESPEAK_PATH = r"C:\Program Files\eSpeak NG"
 
-# FULL PATHS (no guessing)
 os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = r"C:\Program Files\eSpeak NG\libespeak-ng.dll"
 os.environ["PHONEMIZER_ESPEAK_PATH"] = r"C:\Program Files\eSpeak NG\espeak-ng.exe"
 os.environ["PATH"] += r";C:\Program Files\eSpeak NG"
 
 # --------------------------------------------------
 
+# Initialize pygame mixer once
+pygame.mixer.init()
 
 class CoquiTTS:
     def __init__(self, model_name="tts_models/en/vctk/vits"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.tts = TTS(model_name=model_name).to(self.device)
 
-        # 🔥 FIX: Choose a speaker automatically
         if hasattr(self.tts, "speakers") and self.tts.speakers:
-            self.speaker = self.tts.speakers[0]  # first available voice
+            self.speaker = self.tts.speakers[0]
             print(f"🔊 Using speaker: {self.speaker}")
         else:
             self.speaker = None
@@ -38,13 +41,12 @@ class CoquiTTS:
         def _run():
             with self.lock:
                 self.is_speaking = True
+                temp_file = None
                 try:
-                    import uuid
-                    import time
-
-                    # 🔥 UNIQUE FILE NAME EVERY TIME
+                    # Generate unique filename
                     temp_file = f"temp_tts_{uuid.uuid4().hex}.wav"
 
+                    # Generate speech
                     if self.speaker:
                         self.tts.tts_to_file(
                             text=text,
@@ -57,26 +59,57 @@ class CoquiTTS:
                             file_path=temp_file
                         )
 
-                    # Play sound (blocking until done)
-                    playsound.playsound(temp_file)
-
-                    # Ensure file is released
-                    time.sleep(0.1)
+                    # Play with pygame (properly releases file)
+                    pygame.mixer.music.load(temp_file)
+                    pygame.mixer.music.play()
+                    
+                    # Wait for playback to finish
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    
+                    # Stop and unload the file
+                    pygame.mixer.music.stop()
+                    pygame.mixer.music.unload()  # ← KEY: This releases the file
+                    
+                    # Small delay to ensure file is fully released
+                    time.sleep(0.2)
 
                     # Delete file
-                    try:
+                    if os.path.exists(temp_file):
                         os.remove(temp_file)
-                    except:
-                        pass
+                        print(f"✅ Deleted: {temp_file}")
 
                 except Exception as e:
-                    print("TTS Error:", e)
+                    print(f"TTS Error: {e}")
+                    # Cleanup on error
+                    if temp_file and os.path.exists(temp_file):
+                        try:
+                            pygame.mixer.music.stop()
+                            pygame.mixer.music.unload()
+                            time.sleep(0.2)
+                            os.remove(temp_file)
+                            print(f"🧹 Cleaned up after error: {temp_file}")
+                        except Exception as cleanup_err:
+                            print(f"⚠️  Could not delete {temp_file}: {cleanup_err}")
                 finally:
                     self.is_speaking = False
 
-        # 🔥 THREAD MUST BE INSIDE FUNCTION
         threading.Thread(target=_run, daemon=True).start()
 
-
     def stop(self):
-        pass
+        """Stop current playback and clean up all temp files"""
+        try:
+            # Stop current playback
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+            time.sleep(0.2)
+            
+            # Clean up all temp files
+            for file in glob.glob("temp_tts_*.wav"):
+                try:
+                    os.remove(file)
+                    print(f"🧹 Cleaned up: {file}")
+                except Exception as e:
+                    print(f"⚠️  Could not delete {file}: {e}")
+        except Exception as e:
+            print(f"Cleanup error: {e}")
