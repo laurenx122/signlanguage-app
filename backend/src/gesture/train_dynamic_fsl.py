@@ -202,8 +202,8 @@ def train_with_tuning():
     print("🔎 PHASE 1: Hyperparameter Tuning")
     print("="*60)
     
-    lr_options = [0.0005]
-    dropout_options = [0.3]
+    lr_options = [0.001, 0.0005]
+    dropout_options = [0.3, 0.5]
     tuning_results = []
     
     for lr in lr_options:
