@@ -42,58 +42,73 @@ def normalize_landmarks(landmarks_array):
     return normalized.flatten()
 
 def extract_and_visualize(video_path, class_name):
-    """Extract hand landmarks from video with frame sampling"""
     cap = cv2.VideoCapture(str(video_path))
-    sequence = []
-    
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    skip_frames = max(1, total_frames // SEQUENCE_LENGTH)
+    if not cap.isOpened():
+        print(f"❌ Cannot open: {video_path}")
+        return np.zeros((SEQUENCE_LENGTH, 126), dtype=np.float32)
 
-    for i in range(SEQUENCE_LENGTH):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, i * skip_frames)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    target_idxs = np.unique(
+        np.linspace(0, max(total_frames - 1, 0), SEQUENCE_LENGTH).astype(int)
+    )
+    target_set = set(target_idxs.tolist())
+
+    sequence = []
+    frame_idx = 0
+
+    while True:
         success, frame = cap.read()
-        if not success: 
+        if not success or frame is None:
             break
-        
-        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(img_rgb)
-        
-        # Initialize 126 features (63 Left, 63 Right)
-        frame_feats = np.zeros(126, dtype=np.float32)
-        
-        if results.multi_hand_landmarks and results.multi_handedness:
-            for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                label = results.multi_handedness[idx].classification[0].label
-                
-                # Draw for visualization
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                
-                # Extract and normalize
-                raw_lms = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
-                norm_lms = normalize_landmarks(raw_lms)
-                
-                # Place in correct slot
-                if label == 'Left':
-                    frame_feats[0:63] = norm_lms
-                else:
-                    frame_feats[63:126] = norm_lms
-        
-        sequence.append(frame_feats)
-            
-        # Visualization
-        cv2.putText(frame, f"Class: {class_name} | Frame: {i+1}/{SEQUENCE_LENGTH}", 
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.imshow("FSL Feature Extraction", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'): 
-            break
-            
+
+        if frame_idx in target_set:
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(img_rgb)
+
+            frame_feats = np.zeros(126, dtype=np.float32)
+
+            if results.multi_hand_landmarks and results.multi_handedness:
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    label = results.multi_handedness[idx].classification[0].label
+                    mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+                    raw_lms = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
+                    norm_lms = normalize_landmarks(raw_lms)
+
+                    if label == 'Left':
+                        frame_feats[0:63] = norm_lms
+                    else:
+                        frame_feats[63:126] = norm_lms
+
+            sequence.append(frame_feats)
+
+            cv2.putText(frame, f"Class: {class_name} | Frame: {len(sequence)}/{SEQUENCE_LENGTH}",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.imshow("FSL Feature Extraction", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+            if len(sequence) >= SEQUENCE_LENGTH:
+                break
+
+        frame_idx += 1
+
     cap.release()
-    
-    # FIX: Ensure exactly SEQUENCE_LENGTH frames
+
+    sampled_count = len(sequence)
+
     while len(sequence) < SEQUENCE_LENGTH:
         sequence.append(np.zeros(126, dtype=np.float32))
-            
+
+    if sampled_count == 0:
+        print(f"❌ No frames extracted for {video_path.name} (read failed / decode issue)")
+
+    if sampled_count > 0 and sum(np.any(f != 0) for f in sequence[:sampled_count]) == 0:
+        print(f"⚠️ {video_path.name}: sampled frames but all features are zeros (no hands detected?)")
+
     return np.array(sequence[:SEQUENCE_LENGTH], dtype=np.float32)
+
 
 def mirror_sequence(sequence):
     """Augmentation: Horizontal flip with hand slot swapping"""
@@ -150,7 +165,12 @@ def process_and_save():
             (dest_split_path / class_name).mkdir(parents=True, exist_ok=True)
             
             # Count videos for this class
-            video_files = list(class_folder.glob('*.MOV'))
+            # video_files = list(class_folder.glob('*.MOV'))
+            video_files = [
+                f for f in class_folder.iterdir()
+                if f.is_file() and f.suffix.lower() in ('.mov', '.mp4')
+            ]
+
             
             for video_file in video_files:
                 # 1. Extract original sequence
