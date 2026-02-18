@@ -4,7 +4,7 @@ let socket: WebSocket | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let messageCallback: ((msg: string) => void) | null = null;
 // 10.81.255.64 change this with your IP4 address from your lappy
-const WS_URL = "ws:// 192.168.226.81:8000/ws/fsl-simple";
+const WS_URL = "ws://10.104.43.64:8000/ws/fsl-simple";
 let lastPrediction: string | null = null;
 
 export const handleSpeech = async (prediction: string) => {
