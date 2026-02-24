@@ -1,25 +1,45 @@
-# sentence_builder.py
+# backend/src/gesture/sentence_builder.py
 import time
+from typing import List, Optional, Tuple
 
 class SentenceBuilder:
-    def __init__(self, short_pause=0.8, long_pause=2.2, max_tokens=20):
+    """
+    Collect recognized tokens and finalize based on pauses.
+    Then expand gloss-like tokens into more natural English.
+    """
+
+    def __init__(self, short_pause=0.8, long_pause=2.2, max_tokens=25):
         self.short_pause = short_pause
         self.long_pause = long_pause
         self.max_tokens = max_tokens
 
-        self.tokens = []
-        self.last_token_time = None
-        self.pause_start_time = None
+        self.tokens: List[str] = []
+        self.pause_start_time: Optional[float] = None
+        self.last_token_time: Optional[float] = None
 
-    def add_token(self, token: str):
+        # sets for expansion rules
+        self.colors = {
+            "BLUE", "RED", "WHITE", "YELLOW", "ORANGE", "PINK", "VIOLET"
+        }
+        self.foods = {"BREAD", "EGG", "RICE", "LONGANISA"}
+        self.days = {"MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"}
+        self.time_words = {"TODAY", "TOMORROW"}
+
+        self.greetings = {"GOOD MORNING","GOOD AFTERNOON","GOOD EVENING","THANK YOU","YOURE WELCOME"}
+
+        self.ignore_tokens = {"WAITING", "COLLECTING...", "BUFFERING...", "UNKNOWN", ""}
+
+    # ---------------------------
+    # Token collection
+    # ---------------------------
+    def add_token(self, token: str) -> Optional[Tuple[str, str]]:
         now = time.time()
         token = token.strip().upper()
 
-        # Ignore non-words
-        if token in ("WAITING", "COLLECTING...", "BUFFERING...", "UNKNOWN", ""):
+        if token in self.ignore_tokens:
             return None
 
-        # Avoid immediate duplicates (common with stabilizers)
+        # prevent immediate duplicates
         if self.tokens and self.tokens[-1] == token:
             self.last_token_time = now
             return None
@@ -27,14 +47,13 @@ class SentenceBuilder:
         self.tokens.append(token)
         self.last_token_time = now
 
-        # Safety cap
-        if len(self.tokens) > self.max_tokens:
+        # safety cap
+        if len(self.tokens) >= self.max_tokens:
             return self.finalize()
 
         return None
 
-    def update_pause(self, hands_detected: bool):
-        """Call every frame. Returns finalized (raw, expanded) if a LONG pause happened."""
+    def update_pause(self, hands_detected: bool) -> Optional[Tuple[str, str]]:
         now = time.time()
 
         if hands_detected:
@@ -47,57 +66,119 @@ class SentenceBuilder:
             return None
 
         pause_dur = now - self.pause_start_time
-
-        # Long pause = finalize sentence
         if pause_dur >= self.long_pause and self.tokens:
             return self.finalize()
 
         return None
 
-    def finalize(self):
+    def finalize(self) -> Tuple[str, str]:
         raw = " ".join(self.tokens).strip()
-        expanded = self.expand(raw)
+        eng = self.expand(raw)
         self.tokens = []
-        self.last_token_time = None
         self.pause_start_time = None
-        return raw, expanded
+        self.last_token_time = None
+        return raw, eng
 
+    # ---------------------------
+    # Expansion (gloss -> English)
+    # ---------------------------
     def expand(self, raw: str) -> str:
-        """
-        Simple rule-based gloss->English expansion.
-        If we can't expand confidently, return raw (signed order).
-        """
-        toks = raw.split()
+        toks = [t for t in raw.split() if t]
 
-        # Day/time pattern: TODAY MONDAY, TOMORROW TUESDAY
-        if len(toks) == 2 and toks[0] in ("TODAY", "TOMORROW"):
+        if not toks:
+            return ""
+
+        # 1) Remove consecutive duplicates (BLUE BLUE -> BLUE)
+        toks = self._dedupe_consecutive(toks)
+
+        # 2) If entire thing is one of the multi-word greetings, keep it clean
+        joined = " ".join(toks)
+        if joined in self.greetings:
+            return self._to_sentence(joined.title(), punct="")
+
+        # 3) TODAY/TOMORROW + weekday -> Today is Monday.
+        if len(toks) == 2 and toks[0] in self.time_words and toks[1] in self.days:
             return f"{toks[0].title()} is {toks[1].title()}."
 
-        # I KNOW YOU DEAF -> I know you are deaf.
-        if toks == ["I", "KNOW", "YOU", "DEAF"]:
-            return "I know you are deaf."
+        # 4) THANK YOU <-> YOURE WELCOME as two-part exchange
+        if joined == "THANK YOU YOURE WELCOME":
+            return "Thank you. You're welcome."
+        if joined == "YOURE WELCOME THANK YOU":
+            return "You're welcome. Thank you."
 
-        # YOU DEAF -> You are deaf.
-        if toks == ["YOU", "DEAF"]:
-            return "You are deaf."
+        # 5) I/YOU + DEAF -> I am deaf / You are deaf
+        if len(toks) == 2 and toks[0] in {"I","YOU"} and toks[1] == "DEAF":
+            subj = "I" if toks[0] == "I" else "You"
+            verb = "am" if subj == "I" else "are"
+            return f"{subj} {verb} deaf."
 
-        # I DEAF -> I am deaf.
-        if toks == ["I", "DEAF"]:
-            return "I am deaf."
+        # 6) I WRONG / WRONG I / YOU WRONG / WRONG YOU -> (swap if needed)
+        if len(toks) == 2 and set(toks) & {"I", "YOU"} and "WRONG" in toks:
+            subj = "I" if "I" in toks else "You"
+            verb = "am" if subj == "I" else "are"
+            return f"{subj} {verb} wrong."
 
-        # HOT COFFEE / COLD COFFEE
-        if len(toks) == 2 and toks[1] == "COFFEE" and toks[0] in ("HOT", "COLD"):
+        # 7) YES CORRECT / NO WRONG
+        if joined == "YES CORRECT":
+            return "Yes, correct."
+        if joined == "NO WRONG":
+            return "No, wrong."
+
+        # 8) I KNOW / YOU KNOW / I UNDERSTAND / YOU UNDERSTAND / I DON'T KNOW ...
+        if len(toks) == 2 and toks[0] in {"I","YOU"} and toks[1] in {"KNOW","UNDERSTAND","DON'T","DON'T KNOW"}:
+            # handle "DON'T KNOW" possibly split incorrectly
+            if toks[1] == "DON'T":
+                # if the raw had "DON'T KNOW" it would be 3 tokens; handle below
+                pass
+
+        if len(toks) == 3 and toks[0] in {"I","YOU"} and toks[1] == "DON'T" and toks[2] == "KNOW":
+            subj = "I" if toks[0] == "I" else "You"
+            return f"{subj} don't know."
+
+        if len(toks) == 2 and toks[0] in {"I","YOU"} and toks[1] in {"KNOW","UNDERSTAND"}:
+            subj = "I" if toks[0] == "I" else "You"
+            return f"{subj} {toks[1].lower()}."
+
+        # 9) Color pairs -> "Blue and red."
+        if len(toks) == 2 and toks[0] in self.colors and toks[1] in self.colors:
+            if toks[0] == toks[1]:
+                return f"{toks[0].title()}."
+            return f"{toks[0].title()} and {toks[1].title()}."
+
+        # 10) Food pairs -> "Rice and egg."
+        if len(toks) == 2 and toks[0] in self.foods and toks[1] in self.foods:
+            if toks[0] == toks[1]:
+                return f"{toks[0].title()}."
+            return f"{toks[0].title()} and {toks[1].title()}."
+
+        # 11) I YOU / YOU I -> "You and me."
+        if len(toks) == 2 and set(toks) == {"I","YOU"}:
+            # natural English tends to say "You and me."
+            return "You and me."
+
+        # 12) HOT COFFEE / COLD COFFEE
+        if len(toks) == 2 and toks[1] == "COFFEE" and toks[0] in {"HOT","COLD"}:
             return f"{toks[0].title()} coffee."
 
-        # Basic single-word punctuation
-        if len(toks) == 1:
-            w = toks[0]
-            # Greetings
-            if w in ("GOOD", "MORNING", "AFTERNOON", "EVENING"):
-                return w.title()
-            if w in ("THANK", "YOU’RE", "WELCOME", "YOURE", "WELCOME"):
-                return w.title()
-            return w.title() + "."
+        # Default: just title-case, keep gloss order
+        return self._to_sentence(" ".join([t.title() for t in toks]))
 
-        # Default: just title-case words, keep signed order
-        return raw.title()
+    # ---------------------------
+    # helpers
+    # ---------------------------
+    def _dedupe_consecutive(self, toks: List[str]) -> List[str]:
+        if not toks:
+            return toks
+        out = [toks[0]]
+        for t in toks[1:]:
+            if t != out[-1]:
+                out.append(t)
+        return out
+
+    def _to_sentence(self, s: str, punct: str = ".") -> str:
+        s = s.strip()
+        if not s:
+            return ""
+        if punct and not s.endswith((".", "!", "?", ",")):
+            return s + punct
+        return s
