@@ -224,7 +224,6 @@ def update_motion(_landmarks_vec):
 
 
 def draw_info(frame, buffered_sign, top1, p1, top2, p2, motion, fps):
-    # ---- UI MUST NOT CHANGE ----
     cv2.rectangle(frame, (10, 10), (900, 220), (0, 0, 0), -1)
 
     cv2.putText(frame, f"Buffered: {buffered_sign}", (20, 55),

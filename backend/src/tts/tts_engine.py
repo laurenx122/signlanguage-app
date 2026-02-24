@@ -113,3 +113,19 @@ class CoquiTTS:
                     print(f"⚠️  Could not delete {file}: {e}")
         except Exception as e:
             print(f"Cleanup error: {e}")
+
+    def pre_record_help(self):
+        """Generates the 'Help me' audio once so it's ready for instant use."""
+        if not os.path.exists("help_me_static.wav"):
+            print("🎙️ Pre-recording 'Help me!' for instant response...")
+            self.tts.tts_to_file(text="Help me!", file_path="help_me_static.wav", speaker=self.speaker)
+            print("✅ Ready.")
+
+    def speak_help_instant(self):
+        """Plays the pre-recorded file immediately without AI processing lag."""
+        def _run():
+            # No writing files, no AI thinking, just instant playback
+            pygame.mixer.music.load("help_me_static.wav")
+            pygame.mixer.music.play()
+        
+        threading.Thread(target=_run, daemon=True).start()
