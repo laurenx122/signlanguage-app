@@ -1,21 +1,20 @@
-#ws_fsl_server.py
-import base64
+# ws_fsl_server.py
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from collections import deque
-import json
 
 from src.gesture.fsl_static_inference import (
     initialize_fsl_model,
     predict_fsl_static,
-    predict_fsl_batch
 )
 
 router = APIRouter()
 
-# -------------------------------
-# FSL Static WebSocket
-# -------------------------------
-# src/ws_fsl_server.py - Update the simple endpoint
+
+def _strip_data_url(frame_b64: str) -> str:
+    if frame_b64 and frame_b64.lower().startswith("data:") and "," in frame_b64:
+        return frame_b64.split(",", 1)[1]
+    return frame_b64
+
+
 @router.websocket("/ws/fsl-simple")
 async def fsl_simple_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -28,19 +27,14 @@ async def fsl_simple_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
-    frame_buffer = deque(maxlen=5)
-
     try:
         while True:
             frame_b64 = await websocket.receive_text()
-            frame_buffer.append(frame_b64)
+            frame_b64 = _strip_data_url(frame_b64)
 
-            if len(frame_buffer) >= 3:
-                result = predict_fsl_batch(list(frame_buffer), confidence_threshold=0.6)
-            else:
-                result = predict_fsl_static(frame_b64, confidence_threshold=0.6)
+            # ✅ ONLY call predict_fsl_static ONCE per received frame
+            result = predict_fsl_static(frame_b64, confidence_threshold=0.65)
 
-            # Send full JSON response instead of just prediction text
             await websocket.send_json(result)
 
     except WebSocketDisconnect:

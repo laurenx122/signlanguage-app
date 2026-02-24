@@ -1,4 +1,6 @@
+// mainscreen.tsx
 import { Audio } from "expo-av";
+import * as Speech from "expo-speech";
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { connectSocket, closeSocket } from "../services/socket";
@@ -10,34 +12,87 @@ import CameraComponent from "../components/CameraView";
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<"sign" | "speech">("sign");
 
-  // Sign-to-speech
-  const [prediction, setPrediction] = useState("Waiting for sign...");
-
+  // ✅ text we show while spelling
+const [typedText, setTypedText] = useState("");
+const [finalWord, setFinalWord] = useState(""); // last spoken word
+const newWordStartedRef = useRef(false);
   // Speech-to-text
   const [isRecording, setIsRecording] = useState(false);
   const [sttText, setSttText] = useState("Say something...");
 
-  // Recording refs
   const recordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef(0);
   const speechStartedRef = useRef(false);
   const speechDurationRef = useRef(0);
 
-  // Locks to prevent double stop/upload overlaps (Android fix)
   const isStoppingRef = useRef(false);
   const isUploadingRef = useRef(false);
 
-  // --- Connect sign websocket once ---
- useEffect(() => {
+  // keep a ref so websocket callback always sees latest text
+  const typedRef = useRef<string>("");
+  useEffect(() => {
+    typedRef.current = typedText;
+  }, [typedText]);
+
+  // ✅ Connect sign websocket once
+useEffect(() => {
   if (activeTab === "sign") {
-    connectSocket((msg) => setPrediction(msg));
+    // ✅ DO NOT clear signText when entering sign tab
+    // You may clear typedText if you want fresh spelling each time:
+    // setTypedText("");
+
+    connectSocket(async (data) => {
+        const committed = data?.committed_letter;
+
+        // ✅ When the first letter of a new word is committed:
+        if (typeof committed === "string" && committed.length > 0) {
+          if (!newWordStartedRef.current) {
+            // first committed letter after a speak -> start new word
+            setFinalWord("");       // ✅ remove previous word from view
+            setTypedText("");       // reset buffer
+            newWordStartedRef.current = true;
+          }
+
+          setTypedText((prev) => (prev || "") + committed);
+          return;
+        }
+
+        // Optional: sync queue_text (but never overwrite with empty)
+        const q = data?.queue_text;
+        if (typeof q === "string" && q.length > 0) {
+          // If new word started, keep showing the live letters
+          setTypedText(q);
+        }
+
+        // ✅ Speak event (end of word)
+        if (data?.should_speak && Array.isArray(data?.letters_to_speak)) {
+          const word = data.letters_to_speak.join("");
+
+          if (word.length > 0) {
+            try {
+              await Speech.stop();
+              await Speech.speak(word, { language: "en-US", rate: 0.9, pitch: 1.0 });
+              console.log("🔊 Speaking word:", word);
+            } catch (e) {
+              console.log("❌ Speech error:", e);
+            }
+
+            // ✅ show the finished word (persist until next spelling starts)
+            setFinalWord(word);
+          }
+
+          // clear live buffer
+          setTypedText("");
+
+          // ✅ allow next session to clear finalWord on first new letter
+          newWordStartedRef.current = false;
+        }
+      });
   } else {
     closeSocket();
   }
 
-  return () => {
-    closeSocket();
-  };
+  return () => closeSocket();
 }, [activeTab]);
 
   // --- Start/Stop STT when switching tabs ---
@@ -45,7 +100,6 @@ export default function MainScreen() {
     if (activeTab === "speech") {
       startSpeechLoop();
     } else {
-      // leaving speech tab: stop recording but don't upload
       stopRecordingAndSend(false);
       setIsRecording(false);
     }
@@ -77,7 +131,6 @@ export default function MainScreen() {
 
   const startRecording = async () => {
     try {
-      // don't overwrite existing transcription
       setSttText((prev) =>
         prev && prev !== "Say something..." && prev !== "Listening..."
           ? prev
@@ -95,14 +148,12 @@ export default function MainScreen() {
 
       await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
 
-      // ✅ Android: consistent metering updates
-      rec.setProgressUpdateInterval(100); // ms (≈0.1s)
+      rec.setProgressUpdateInterval(100);
 
-      // ✅ Android silence detection settings
-      const silenceDbThreshold = -35;   // try -30 if room is noisy, -40 if too sensitive
-      const silenceSecondsToStop = 1.0; // stop after 1 second of silence
-      const minSpeechSeconds = 0.3;     // must speak a bit before auto-stop
-      const frameSec = 0.1;             // matches 100ms update interval
+      const silenceDbThreshold = -35;
+      const silenceSecondsToStop = 1.0;
+      const minSpeechSeconds = 0.3;
+      const frameSec = 0.1;
 
       rec.setOnRecordingStatusUpdate((status) => {
         if (!status.isRecording) return;
@@ -110,16 +161,12 @@ export default function MainScreen() {
         const db = (status as any).metering;
         if (typeof db !== "number") return;
 
-        // console.log("🎚 dB:", db);
-
         if (db > silenceDbThreshold) {
           speechStartedRef.current = true;
           silenceTimerRef.current = 0;
           speechDurationRef.current += frameSec;
         } else {
-          if (speechStartedRef.current) {
-            silenceTimerRef.current += frameSec;
-          }
+          if (speechStartedRef.current) silenceTimerRef.current += frameSec;
         }
 
         if (
@@ -127,7 +174,6 @@ export default function MainScreen() {
           speechDurationRef.current >= minSpeechSeconds &&
           silenceTimerRef.current >= silenceSecondsToStop
         ) {
-          // ✅ prevent multiple stop calls
           if (isStoppingRef.current || isUploadingRef.current) return;
           stopRecordingAndSend(true);
         }
@@ -142,7 +188,6 @@ export default function MainScreen() {
   };
 
   const stopRecordingAndSend = async (restartAfter: boolean) => {
-    // ✅ prevent double stop
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
 
@@ -164,14 +209,9 @@ export default function MainScreen() {
         return;
       }
 
-      // If we're leaving the tab (restartAfter=false), don't upload
       if (!restartAfter) return;
 
-      // ✅ prevent overlapping uploads
-      if (isUploadingRef.current) {
-        // release stop lock so future stops work
-        return;
-      }
+      if (isUploadingRef.current) return;
       isUploadingRef.current = true;
 
       setSttText((prev) =>
@@ -180,18 +220,12 @@ export default function MainScreen() {
 
       const text = await sendAudioForSTT(uri);
 
-      // Append transcription (keeps history)
       setSttText((prev) => {
         const t = (text || "").trim();
         if (!t) return prev || "…";
-        if (
-          !prev ||
-          prev === "Say something..." ||
-          prev === "Listening..." ||
-          prev === "Transcribing..."
-        )
+        if (!prev || prev === "Say something..." || prev === "Listening..." || prev === "Transcribing...")
           return t;
-         return t ? t : "…";
+        return t ? t : "…";
       });
     } catch (e) {
       console.log("❌ stop/send error:", e);
@@ -200,27 +234,27 @@ export default function MainScreen() {
       isUploadingRef.current = false;
       isStoppingRef.current = false;
 
-      // ✅ restart only after upload finishes and still on speech tab
       if (restartAfter && activeTab === "speech") {
         await startRecording();
       }
     }
   };
 
+const signBoxText =
+  typedText.length > 0
+    ? typedText
+    : finalWord.length > 0
+    ? finalWord
+    : "Waiting for sign...";
+
   return (
     <View style={styles.container}>
-      {/* Toggle Buttons */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === "sign" && styles.activeTab]}
           onPress={() => setActiveTab("sign")}
         >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "sign" && styles.activeTabText,
-            ]}
-          >
+          <Text style={[styles.tabText, activeTab === "sign" && styles.activeTabText]}>
             Sign to Speech
           </Text>
         </TouchableOpacity>
@@ -229,18 +263,12 @@ export default function MainScreen() {
           style={[styles.tab, activeTab === "speech" && styles.activeTab]}
           onPress={() => setActiveTab("speech")}
         >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "speech" && styles.activeTabText,
-            ]}
-          >
+          <Text style={[styles.tabText, activeTab === "speech" && styles.activeTabText]}>
             Speech to Text
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main Content Area */}
       <View style={styles.content}>
         {activeTab === "sign" ? (
           <View style={styles.stackedContainer}>
@@ -249,7 +277,7 @@ export default function MainScreen() {
             </View>
 
             <View style={styles.fullTextBox}>
-              <Text style={styles.predictionText}>{prediction}</Text>
+              <Text style={styles.predictionText}>{signBoxText}</Text>
             </View>
           </View>
         ) : (
@@ -266,38 +294,61 @@ export default function MainScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 0,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: "#fff",
+  container: { 
+    flex: 1, 
+    paddingTop: 0, 
+    paddingHorizontal: 20, 
+    paddingBottom: 20, 
+    backgroundColor: "#fff" 
   },
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: "#e5e0db",
-    borderRadius: 25,
-    padding: 5,
+  tabContainer: { 
+    flexDirection: "row", 
+    backgroundColor: "#e5e0db", 
+    borderRadius: 25, 
+    padding: 5 
   },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 20 },
-  activeTab: { backgroundColor: "#6d3d1e" },
-  tabText: { color: "#777", fontWeight: "600" },
-  activeTabText: { color: "#fff" },
-  content: { marginTop: 20, flex: 1 },
-  stackedContainer: { flexDirection: "column", gap: 15, height: "100%" },
-  cameraBox: { height: 300, borderRadius: 20, overflow: "hidden" },
-  fullTextBox: {
-    backgroundColor: "#e5e0db",
-    height: 200,
-    borderRadius: 20,
-    padding: 20,
-    justifyContent: "center",
-    alignItems: "center",
+  tab: { 
+    flex: 1, 
+    paddingVertical: 12, 
+    alignItems: "center", 
+    borderRadius: 20 
   },
-  predictionText: {
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-    color: "#333",
+  activeTab: { 
+    backgroundColor: "#6d3d1e" 
+  },
+  tabText: { 
+    color: "#777", 
+    fontWeight: "600" 
+  },
+  activeTabText: { 
+    color: "#fff" 
+  },
+  content: { 
+    marginTop: 20, 
+    flex: 1 
+  },
+  stackedContainer: { 
+    flexDirection: "column", 
+    gap: 15, 
+    height: "100%" 
+  },
+  cameraBox: { 
+    height: 300, 
+    borderRadius: 20, 
+    overflow: "hidden" 
+  },
+  fullTextBox: { 
+    backgroundColor: "#e5e0db", 
+    height: 200, 
+    borderRadius: 20, 
+    padding: 20, 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+  predictionText: { 
+    fontSize: 28, 
+    fontWeight: "700", 
+    textAlign: "center", 
+    color: "#333" 
   },
 });
