@@ -114,18 +114,24 @@ class CoquiTTS:
         except Exception as e:
             print(f"Cleanup error: {e}")
 
-    def pre_record_help(self):
-        """Generates the 'Help me' audio once so it's ready for instant use."""
-        if not os.path.exists("help_me_static.wav"):
-            print("🎙️ Pre-recording 'Help me!' for instant response...")
-            self.tts.tts_to_file(text="Help me!", file_path="help_me_static.wav", speaker=self.speaker)
-            print("✅ Ready.")
+#raspberry pi emergency audio class
+class EmergencyAudio:
+    def __init__(self, mp3_name="help_me.mp3"):
+        self.mp3_path = os.path.join("/home/sms/fsl_project", mp3_name)
 
-    def speak_help_instant(self):
-        """Plays the pre-recorded file immediately without AI processing lag."""
+    def play_help_instant(self):
         def _run():
-            # No writing files, no AI thinking, just instant playback
-            pygame.mixer.music.load("help_me_static.wav")
-            pygame.mixer.music.play()
-        
+            try:
+                if os.path.exists(self.mp3_path):
+                    print(f"🔊 Playing audio: {self.mp3_path}")
+                    pygame.mixer.music.load(self.mp3_path)
+                    pygame.mixer.music.play()
+                    # Keep thread alive while music plays
+                    while pygame.mixer.music.get_busy():
+                        pygame.time.Clock().tick(10)
+                else:
+                    print(f"❌ Error: File not found at {self.mp3_path}")
+            except Exception as e:
+                print(f"Audio Error: {e}")
+
         threading.Thread(target=_run, daemon=True).start()
