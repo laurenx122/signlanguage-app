@@ -1,35 +1,59 @@
+# pair_rules.csv
+# PURPOSE:
+#   Controls which CATEGORY pairs are allowed when generating 2-token phrases.
+#   This keeps the phrase bank useful (common combinations) and reduces nonsense
+#   (e.g., "WRONG BLUE", "CORRECT RICE") unless you truly want them.
+#
+# FORMAT:
+#   LEFT_CAT,RIGHT_CAT
+#
+# NOTES:
+#   Comments start with # and will be ignored by generate_phrases.py (updated).
+
 LEFT_CAT,RIGHT_CAT
+
+# --- Greetings & polite expressions ---
 GREETING,GREETING
-GREETING,SURVIVAL
-GREETING,FAMILY
 GREETING,RELATIONSHIPS
+GREETING,FAMILY
 
-RELATIONSHIPS,RELATIONSHIPS
-RELATIONSHIPS,SURVIVAL
-RELATIONSHIPS,FAMILY
-RELATIONSHIPS,FOOD
-RELATIONSHIPS,DRINK
-RELATIONSHIPS,COLOR
-RELATIONSHIPS,DAYS
-
+# --- Survival / confirmations ---
 SURVIVAL,SURVIVAL
+RELATIONSHIPS,SURVIVAL
 SURVIVAL,RELATIONSHIPS
-SURVIVAL,FOOD
-SURVIVAL,DRINK
-SURVIVAL,COLOR
-SURVIVAL,DAYS
 
-FOOD,FOOD
-FOOD,DRINK
-FOOD,COLOR
-
-DRINK,DRINK
-DRINK,FOOD
-DRINK,COLOR
-
+# --- Core objects (pairing inside the same category) ---
 COLOR,COLOR
-COLOR,FOOD
-COLOR,DRINK
+FOOD,FOOD
+DRINK,DRINK
 
+# --- Time expressions ---
 DAYS,DAYS
-DAYS,SURVIVAL
+MODIFIER,DAYS
+
+# --- Basic statements like "I WANT", "YOU LIKE" (verb follows subject) ---
+RELATIONSHIPS,VERB
+
+# --- Verb takes objects / complements ---
+VERB,FOOD
+VERB,DRINK
+VERB,COLOR
+VERB,RELATIONSHIPS
+VERB,MODIFIER
+VERB,IDENTITY
+VERB,DAYS
+
+# --- Modifiers like "MORE RICE", "MAYBE TOMORROW", "HERE TODAY" ---
+MODIFIER,FOOD
+MODIFIER,DRINK
+MODIFIER,COLOR
+MODIFIER,RELATIONSHIPS
+
+# --- Questions: question word then target ---
+QUESTION,RELATIONSHIPS
+QUESTION,IDENTITY
+QUESTION,DAYS
+QUESTION,FOOD
+QUESTION,DRINK
+QUESTION,COLOR
+QUESTION,MODIFIER
