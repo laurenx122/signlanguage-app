@@ -21,7 +21,7 @@ VAL_DIR = BASE_DEST / 'val'
 TEST_DIR = BASE_DEST / 'test'
 
 # ← Path to your labels CSV (id, label, category)
-LABELS_CSV = PROJECT_ROOT / 'data' / 'labels.csv'
+LABELS_CSV = PROJECT_ROOT / 'data' / 'raw' / 'fsl_dynamic' /'labels.csv'
 
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
