@@ -1,274 +1,176 @@
 """
 test_dynamic_webcam.py
 Real-time FSL dynamic sign language recognition with TTS + sentence building
+
+- Uses segment-based inference (collect full gesture, resample to 30, predict once)
+- Keeps OLD UI style (WAITING / COLLECTING / STABLE / LOCKED) with green highlight
 """
+
 import sys
-import os
 import cv2
 import time
 import numpy as np
 from pathlib import Path
-from collections import deque, Counter
 
 sys.path.append(str(Path(__file__).parent.parent))
 from tts.tts_engine import CoquiTTS
 
-# Import inference functions
+# Segment-based inference
 from fsl_dynamic_inference import (
     initialize_dynamic_model,
-    add_frame_to_buffer,
-    predict_dynamic_sign,
+    update_and_maybe_predict,
     reset_buffer,
-    get_buffer_info
+    get_model_info
 )
 
-# ✅ NEW: sentence builder
 from sentence_builder import SentenceBuilder
 
 
-class GestureStabilizer:
+# -----------------------------
+# UI Hold (to mimic old "green stable" behavior)
+# -----------------------------
+class UIResultHold:
     """
-    Stabilizer for dynamic gestures with improved prediction stability
+    Holds the last predicted label on screen in green for a short time
+    to mimic the previous stabilizer's STABLE/LOCKED feel.
     """
-    def __init__(
-        self,
-        confidence_threshold=0.55,
-        stability_window=12,
-        min_stable_count=8,
-        hold_duration=1.5,
-        min_gesture_frames=8,
-        max_no_hands_frames=5
-    ):
-        self.confidence_threshold = confidence_threshold
-        self.stability_window = stability_window
-        self.min_stable_count = min_stable_count
-        self.hold_duration = hold_duration
-        self.min_gesture_frames = min_gesture_frames
-        self.max_no_hands_frames = max_no_hands_frames
+    def __init__(self, stable_hold=0.8, locked_hold=0.8):
+        self.stable_hold = stable_hold
+        self.locked_hold = locked_hold
 
-        self.prediction_history = deque(maxlen=stability_window)
-        self.confidence_history = deque(maxlen=stability_window)
+        self.last_pred = None
+        self.last_conf = 0.0
+        self.last_top3_labels = []
+        self.last_top3_confs = []
 
-        self.current_stable = None
-        self.stable_since = None
-        self.stable_confidence = 0.0
+        self.state = "WAITING"  # WAITING / COLLECTING / STABLE / LOCKED
+        self.state_since = time.time()
 
-        self.gesture_active = False
-        self.gesture_start_time = None
-        self.no_hands_counter = 0
-        self.total_frames_seen = 0
+    def update(self, seg_result: dict) -> dict:
+        """
+        Convert segment inference output to old UI-style result dict:
+          prediction, confidence, status, top3_labels, top3_confs, should_announce
+        """
+        now = time.time()
 
-        self.last_announced = None
-
-    def stabilize(self, prediction, confidence, top3_labels, top3_confs, hands_detected=True):
-        current_time = time.time()
-        self.total_frames_seen += 1
-
-        if hands_detected:
-            self.no_hands_counter = 0
-            if not self.gesture_active:
-                self.gesture_active = True
-                self.gesture_start_time = current_time
-                self.total_frames_seen = 0
-        else:
-            self.no_hands_counter += 1
-
-        gesture_ended = (self.no_hands_counter > self.max_no_hands_frames)
-
-        # Holding stable result
-        if self.current_stable and self.stable_since:
-            time_held = current_time - self.stable_since
-
-            if time_held < self.hold_duration:
-                return {
-                    'prediction': self.current_stable,
-                    'confidence': self.stable_confidence,
-                    'status': 'LOCKED',
-                    'time_remaining': self.hold_duration - time_held,
-                    'gesture_duration': current_time - self.gesture_start_time if self.gesture_start_time else 0,
-                    'raw_prediction': prediction,
-                    'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': False
-                }
-            else:
-                if gesture_ended:
-                    self._reset_for_new_gesture()
-                    return {
-                        'prediction': 'WAITING',
-                        'confidence': 0.0,
-                        'status': 'WAITING',
-                        'raw_prediction': prediction,
-                        'raw_confidence': confidence,
-                        'top3_labels': top3_labels,
-                        'top3_confs': top3_confs,
-                        'should_announce': False
-                    }
-
-                self.current_stable = None
-                self.stable_since = None
-
-        # Gesture ended - analyze
-        if gesture_ended and self.gesture_active and len(self.prediction_history) >= self.min_gesture_frames:
-            result = self._analyze_gesture()
-
-            if result:
-                self.current_stable = result['prediction']
-                self.stable_since = current_time
-                self.stable_confidence = result['confidence']
-                self.gesture_active = False
-
-                should_announce = (self.current_stable != self.last_announced)
-                if should_announce:
-                    self.last_announced = self.current_stable
-
-                return {
-                    'prediction': result['prediction'],
-                    'confidence': result['confidence'],
-                    'status': 'STABLE',
-                    'votes': result['votes'],
-                    'gesture_duration': current_time - self.gesture_start_time if self.gesture_start_time else 0,
-                    'raw_prediction': prediction,
-                    'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': should_announce
-                }
-
-        if gesture_ended:
-            self.manual_reset()
-            return {
-                'prediction': 'WAITING',
-                'confidence': 0.0,
-                'status': 'WAITING',
-                'raw_prediction': prediction,
-                'raw_confidence': confidence,
-                'top3_labels': [],
-                'top3_confs': [],
-                'should_announce': False
-            }
-
-        # Collecting predictions
-        if self.gesture_active and hands_detected:
-            if confidence >= self.confidence_threshold and prediction not in ["UNKNOWN", "Buffering..."]:
-                self.prediction_history.append(prediction)
-                self.confidence_history.append(confidence)
-
-            if len(self.prediction_history) < self.min_gesture_frames:
-                return {
-                    'prediction': 'COLLECTING...',
-                    'confidence': confidence,
-                    'status': 'COLLECTING',
-                    'buffer': f"{len(self.prediction_history)}/{self.min_gesture_frames}",
-                    'raw_prediction': prediction,
-                    'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': False
-                }
-
-            vote_counts = Counter(self.prediction_history)
-            dominant_label, vote_count = vote_counts.most_common(1)[0]
-            dominance = vote_count / len(self.prediction_history)
-
-            if dominance >= 0.6:
-                self.current_stable = dominant_label
-                self.stable_confidence = float(np.mean(self.confidence_history)) if self.confidence_history else confidence
-                self.stable_since = current_time
-                self.prediction_history.clear()
-                self.confidence_history.clear()
-
-                should_announce = (dominant_label != self.last_announced)
-                if should_announce:
-                    self.last_announced = dominant_label
-
-                return {
-                    'prediction': dominant_label,
-                    'confidence': self.stable_confidence,
-                    'status': 'STABLE',
-                    'raw_prediction': prediction,
-                    'raw_confidence': confidence,
-                    'top3_labels': top3_labels,
-                    'top3_confs': top3_confs,
-                    'should_announce': should_announce
-                }
-
-            return {
-                'prediction': self.current_stable if self.current_stable else dominant_label,
-                'confidence': confidence,
-                'status': 'COLLECTING',
-                'buffer': f"{len(self.prediction_history)}/{self.min_gesture_frames}",
-                'raw_prediction': prediction,
-                'raw_confidence': confidence,
-                'top3_labels': top3_labels,
-                'top3_confs': top3_confs,
-                'should_announce': False
-            }
-
-        return {
-            'prediction': 'WAITING',
-            'confidence': 0.0,
-            'status': 'WAITING',
-            'raw_prediction': prediction,
-            'raw_confidence': confidence,
-            'top3_labels': top3_labels,
-            'top3_confs': top3_confs,
-            'should_announce': False
+        # Default result
+        out = {
+            "prediction": "WAITING",
+            "confidence": 0.0,
+            "status": "WAITING",
+            "top3_labels": [],
+            "top3_confs": [],
+            "should_announce": False
         }
 
-    def _analyze_gesture(self):
-        if len(self.prediction_history) < self.min_gesture_frames:
-            return None
+        is_ready = bool(seg_result.get("is_ready", False))
+        top1_label = seg_result.get("top1_label", "WAITING")
+        top1_conf = float(seg_result.get("top1_conf", 0.0))
+        top3_labels = seg_result.get("top3_labels", [])
+        top3_confs = seg_result.get("top3_confs", [])
 
-        vote_counts = Counter(self.prediction_history)
-        most_common, vote_count = vote_counts.most_common(1)[0]
-        consensus_ratio = vote_count / len(self.prediction_history)
+        dbg = seg_result.get("debug", {})
+        collecting = bool(dbg.get("collecting", False))
+        frames_collected = int(dbg.get("frames_collected", 0))
 
-        if consensus_ratio >= 0.60:
-            avg_confidence = float(np.mean([
-                conf for pred, conf in zip(self.prediction_history, self.confidence_history)
-                if pred == most_common
-            ])) if self.confidence_history else 0.0
+        # If we got a new prediction (gesture ended)
+        if is_ready:
+            self.last_pred = top1_label
+            self.last_conf = top1_conf
+            self.last_top3_labels = top3_labels
+            self.last_top3_confs = top3_confs
 
-            return {'prediction': most_common, 'confidence': avg_confidence, 'votes': f"{vote_count}/{len(self.prediction_history)}"}
+            self.state = "STABLE"
+            self.state_since = now
 
-        second_half_start = len(self.prediction_history) // 2
-        second_half = list(self.prediction_history)[second_half_start:]
+            out.update({
+                "prediction": self.last_pred,
+                "confidence": self.last_conf,
+                "status": "STABLE",
+                "top3_labels": self.last_top3_labels,
+                "top3_confs": self.last_top3_confs,
+                "should_announce": True,   # announce exactly once per gesture prediction
+                "buffer": f"{min(frames_collected, 30)}/30"  # optional
+            })
+            return out
 
-        if len(second_half) >= self.min_gesture_frames // 2:
-            vote_counts_2nd = Counter(second_half)
-            most_common_2nd, vote_count_2nd = vote_counts_2nd.most_common(1)[0]
+        # If we are currently holding a result
+        if self.state in ("STABLE", "LOCKED") and self.last_pred is not None:
+            elapsed = now - self.state_since
 
-            if vote_count_2nd / len(second_half) >= 0.55:
-                avg_confidence = float(np.mean([
-                    conf for pred, conf in zip(
-                        list(self.prediction_history)[second_half_start:],
-                        list(self.confidence_history)[second_half_start:]
-                    ) if pred == most_common_2nd
-                ])) if self.confidence_history else 0.0
+            if self.state == "STABLE":
+                # after stable_hold, go to LOCKED (still green) briefly
+                if elapsed >= self.stable_hold:
+                    self.state = "LOCKED"
+                    self.state_since = now
+                    elapsed = 0.0
 
-                return {'prediction': most_common_2nd, 'confidence': avg_confidence, 'votes': f"{vote_count_2nd}/{len(second_half)} (2nd half)"}
+                out.update({
+                    "prediction": self.last_pred,
+                    "confidence": self.last_conf,
+                    "status": "STABLE",
+                    "top3_labels": self.last_top3_labels,
+                    "top3_confs": self.last_top3_confs,
+                    "should_announce": False
+                })
+                return out
 
-        return None
+            if self.state == "LOCKED":
+                # after locked_hold, clear back to waiting
+                if elapsed >= self.locked_hold:
+                    self.last_pred = None
+                    self.last_conf = 0.0
+                    self.last_top3_labels = []
+                    self.last_top3_confs = []
+                    self.state = "WAITING"
+                    self.state_since = now
 
-    def _reset_for_new_gesture(self):
-        self.prediction_history.clear()
-        self.confidence_history.clear()
-        self.gesture_active = False
-        self.gesture_start_time = None
-        self.no_hands_counter = 0
-        self.total_frames_seen = 0
+                out.update({
+                    "prediction": self.last_pred if self.last_pred else "WAITING",
+                    "confidence": self.last_conf if self.last_pred else 0.0,
+                    "status": "LOCKED" if self.last_pred else "WAITING",
+                    "top3_labels": self.last_top3_labels,
+                    "top3_confs": self.last_top3_confs,
+                    "should_announce": False
+                })
+                return out
+
+        # Not holding any previous result → show collecting/waiting
+        if collecting:
+            out.update({
+                "prediction": "COLLECTING...",
+                "confidence": 0.0,
+                "status": "COLLECTING",
+                "buffer": f"{min(frames_collected, 30)}/30",
+                "top3_labels": top3_labels,
+                "top3_confs": top3_confs,
+                "should_announce": False
+            })
+        else:
+            out.update({
+                "prediction": "WAITING",
+                "confidence": 0.0,
+                "status": "WAITING",
+                "top3_labels": [],
+                "top3_confs": [],
+                "should_announce": False
+            })
+
+        return out
 
     def manual_reset(self):
-        self._reset_for_new_gesture()
-        self.current_stable = None
-        self.stable_since = None
-        self.stable_confidence = 0.0
-        self.last_announced = None
+        self.last_pred = None
+        self.last_conf = 0.0
+        self.last_top3_labels = []
+        self.last_top3_confs = []
+        self.state = "WAITING"
+        self.state_since = time.time()
 
 
-def draw_ui(frame, result, hands_detected, fps, buffer_info, current_sentence_raw="", current_sentence_eng=""):
+# -----------------------------
+# OLD UI Drawer (kept style)
+# -----------------------------
+def draw_ui(frame, result, hands_detected, fps, current_sentence_raw="", current_sentence_eng=""):
     h, w, _ = frame.shape
 
     prediction = result['prediction']
@@ -287,9 +189,13 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info, current_sentence_ra
     }
     color = status_colors.get(status, (255, 255, 255))
 
-    if 'buffer' in result:
-        cur, total = map(int, result['buffer'].split('/'))
-        progress = min(cur / total, 1.0)
+    # Progress bar (same look as your old code)
+    if 'buffer' in result and status == "COLLECTING":
+        try:
+            cur, total = map(int, result['buffer'].split('/'))
+        except Exception:
+            cur, total = 0, 30
+        progress = min(cur / max(total, 1), 1.0)
         bar_w = int(w * 0.6 * progress)
 
         cv2.rectangle(frame, (20, 15), (20 + int(w * 0.6), 35), (50, 50, 50), -1)
@@ -323,16 +229,13 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info, current_sentence_ra
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
             y_offset += 20
 
-    # ✅ Sentence display
+    # Sentence display
     if current_sentence_raw:
         cv2.putText(frame, f"RAW: {current_sentence_raw}", (box_x + 15, box_y + 205),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
     if current_sentence_eng:
         cv2.putText(frame, f"ENG: {current_sentence_eng}", (box_x + 15, box_y + 225),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-
-    cv2.putText(frame, f"Buffer: {buffer_info['current']}/{buffer_info['max']}",
-                (w - 200, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 100), 2)
 
     cv2.putText(frame, f"FPS: {fps:.1f}", (20, 70),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 100), 2)
@@ -342,31 +245,27 @@ def draw_ui(frame, result, hands_detected, fps, buffer_info, current_sentence_ra
 
 
 def main():
-    print("="*70)
+    print("=" * 70)
     print("🎥 FSL DYNAMIC SIGN LANGUAGE RECOGNITION")
-    print("   Real-time recognition with Text-to-Speech + Sentence Builder")
-    print("="*70)
+    print("   Segment-based inference + OLD UI (green stable highlight)")
+    print("=" * 70)
 
     initialize_dynamic_model()
+    info = get_model_info()
+    print(f"📌 Model ready: {info}")
 
     print("\n🔊 Initializing Coqui TTS...")
     tts = CoquiTTS()
     print("✅ TTS ready")
 
-    stabilizer = GestureStabilizer(
-        confidence_threshold=0.55,
-        stability_window=20,
-        min_stable_count=12,
-        hold_duration=1.0,
-        min_gesture_frames=12,
-        max_no_hands_frames=10
+    # Sentence builder
+    sentence_builder = SentenceBuilder(
+        short_pause=0.8,
+        long_pause=2.2
     )
 
-    # ✅ NEW: sentence builder (tune pauses here)
-    sentence_builder = SentenceBuilder(
-        short_pause=0.8,   # between words
-        long_pause=2.2     # end of sentence
-    )
+    # ✅ UI hold to show STABLE/LOCKED like before
+    ui_hold = UIResultHold(stable_hold=0.9, locked_hold=0.7)
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -379,11 +278,12 @@ def main():
 
     print("\n✅ Webcam ready")
     print("\n⌨️  Controls: Q quit | R reset")
-    print("="*70)
+    print("=" * 70)
 
     fps_counter, fps_start, fps = 0, time.time(), 0
 
-    result = {
+    # Old UI format
+    ui_result = {
         'prediction': 'WAITING',
         'confidence': 0.0,
         'status': 'WAITING',
@@ -404,49 +304,45 @@ def main():
 
             frame = cv2.flip(frame, 1)
 
-            hands_detected = add_frame_to_buffer(frame)
-            buffer_info = get_buffer_info()
+            # Segment inference result (dict)
+            seg_result = update_and_maybe_predict(frame)
 
-            raw_result = predict_dynamic_sign()
-            top1_label = raw_result['top1_label']
-            top1_conf = raw_result['top1_conf']
-            top3_labels = raw_result['top3_labels']
-            top3_confs = raw_result['top3_confs']
+            # Better hands_detected: when collecting, we know hands were recently present
+            dbg = seg_result.get("debug", {})
+            hands_detected = bool(dbg.get("collecting", False))
 
-            result = stabilizer.stabilize(
-                top1_label,
-                top1_conf,
-                top3_labels,
-                top3_confs,
-                hands_detected=hands_detected
-            )
+            # Convert to old UI result and hold green stable for a short time
+            ui_result = ui_hold.update(seg_result)
 
-            # ✅ Add tokens when stable
-            if result.get('status') == 'STABLE' and result.get('should_announce'):
-                token = result['prediction']
-                sentence_builder.add_token(token)
-                current_raw = " ".join(sentence_builder.tokens)
-                current_eng = sentence_builder.expand(current_raw) if current_raw else ""
+            # Add token ONLY when we got a new gesture prediction
+            if ui_result.get("status") == "STABLE" and ui_result.get("should_announce"):
+                token = ui_result["prediction"]
+                conf = ui_result.get("confidence", 0.0)
 
-            # ✅ Finalize sentence on long pause
+                if conf >= 0.40 and token not in ["Too short / ignored", "WAITING", "COLLECTING..."]:
+                    sentence_builder.add_token(token)
+                    current_raw = " ".join(sentence_builder.tokens)
+                    current_eng = sentence_builder.expand(current_raw) if current_raw else ""
+
+            # Finalize sentence on long pause
             finalized = sentence_builder.update_pause(hands_detected)
             if finalized:
                 raw_sentence, eng_sentence = finalized
                 print(f"\n🧾 RAW: {raw_sentence}")
                 print(f"💬 ENG: {eng_sentence}")
 
-                # Speak the expanded sentence (or raw if expansion didn't change)
                 speak_text = eng_sentence if eng_sentence else raw_sentence
                 tts.speak_async(speak_text)
 
                 current_raw, current_eng = "", ""
 
+            # FPS
             fps_counter += 1
             if fps_counter >= 30:
                 fps = fps_counter / (time.time() - fps_start)
                 fps_counter, fps_start = 0, time.time()
 
-            draw_ui(frame, result, hands_detected, fps, buffer_info, current_raw, current_eng)
+            draw_ui(frame, ui_result, hands_detected, fps, current_raw, current_eng)
             cv2.imshow('FSL Dynamic Sign Recognition', frame)
 
             key = cv2.waitKey(1) & 0xFF
@@ -454,10 +350,10 @@ def main():
                 print("\n👋 Exiting...")
                 break
             elif key == ord('r'):
-                stabilizer.manual_reset()
                 reset_buffer()
+                ui_hold.manual_reset()
                 tts.stop()
-                sentence_builder.finalize()  # clear
+                sentence_builder.finalize()
                 current_raw, current_eng = "", ""
                 print("\n🔄 Reset!")
 
