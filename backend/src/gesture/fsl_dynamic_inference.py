@@ -26,7 +26,7 @@ MODEL_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_final' / 'final_model_compl
 LABEL_MAP_PATH = PROJECT_ROOT / 'models' / 'lstm_dynamic_final' / 'label_mapping.json'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-INPUT_SIZE = 126
+INPUT_SIZE = 252
 SEQUENCE_LENGTH = 30
 
 # Gesture segmentation thresholds (tune these)
@@ -135,7 +135,8 @@ def initialize_dynamic_model():
     print(f"   - Test F1: {checkpoint['test_metrics']['f1']:.4f}")
 
     # IMPORTANT: use dropout=0.0 (or keep 0.4) doesn't matter in eval, but keep consistent
-    model = ImprovedLSTMModel(num_classes=num_classes, dropout=0.4)
+    # model = ImprovedLSTMModel(num_classes=num_classes, dropout=0.4)
+    model = ImprovedLSTMModel(input_size=INPUT_SIZE, num_classes=num_classes, dropout=0.4)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(DEVICE)
     model.eval()
@@ -210,10 +211,16 @@ def resample_sequence(seq: np.ndarray, target_len: int) -> np.ndarray:
     return seq[idxs].astype(np.float32)
 
 def predict_from_sequence(sequence_30: np.ndarray) -> dict:
-    """Run model on a (30,126) sequence and return top results."""
+    """Run model on a (30, 126) sequence, adds velocity, returns top results."""
     global model, classes
 
-    sequence_tensor = torch.from_numpy(sequence_30).unsqueeze(0).to(DEVICE)
+    # Only add velocity if not already added (check if shape is still 126)
+    if sequence_30.shape[1] == 126:
+        velocity = np.zeros_like(sequence_30)
+        velocity[1:] = sequence_30[1:] - sequence_30[:-1]
+        sequence_30 = np.concatenate([sequence_30, velocity], axis=1)  # (30, 252)
+
+    sequence_tensor = torch.from_numpy(sequence_30).unsqueeze(0).float().to(DEVICE)
 
     with torch.no_grad():
         output = model(sequence_tensor)

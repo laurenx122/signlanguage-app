@@ -45,7 +45,7 @@ def evaluate_dynamic_model():
     test_ds = FSLSequenceDataset(split='test')
     test_loader = DataLoader(test_ds, batch_size=32, shuffle=False)
     
-    model = ImprovedLSTMModel(input_size=126, num_classes=len(classes))
+    model = ImprovedLSTMModel(input_size=252, num_classes=len(classes))
     
     # Load checkpoint directly as it is the state_dict
     model.load_state_dict(checkpoint) 
@@ -119,7 +119,8 @@ def evaluate_dynamic_model():
 
 [DATASET INFO]
 ✅ Classes Detected: {len(classes)}
-✅ Features: 126 Landmarks (2 Hands)
+# ✅ Features: 126 Landmarks (2 Hands)
+✅ Features: 252 (126 position + 126 velocity)
 ✅ Evaluation Samples: {len(test_ds)}
 
 [FINAL TEST PERFORMANCE]

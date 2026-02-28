@@ -21,7 +21,7 @@ MODEL_DIR = PROJECT_ROOT / 'models' / 'lstm_dynamic_final'
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-INPUT_SIZE = 126  # 2 hands * 21 landmarks * 3 coords
+INPUT_SIZE = 252  # 126 position + 126 velocity (after add_velocity_features)
 SEQ_LEN = 30
 
 print(f"🖥️  Using device: {DEVICE}")
@@ -56,7 +56,7 @@ class EarlyStopping:
 # --- Model Architecture ---
 class ImprovedLSTMModel(nn.Module):
     """LSTM with Conv1D preprocessing, bidirectional layers, and attention"""
-    def __init__(self, input_size=126, hidden_size=256, num_layers=3, num_classes=44, dropout=0.4):
+    def __init__(self, input_size=252, hidden_size=256, num_layers=3, num_classes=44, dropout=0.4):
         super(ImprovedLSTMModel, self).__init__()
         
         # Conv1D for local feature extraction
@@ -89,20 +89,28 @@ class ImprovedLSTMModel(nn.Module):
         x = x.transpose(1, 2)
         
         # LSTM
-        lstm_out, _ = self.lstm(x)
+        lstm_out, (hidden, _) = self.lstm(x)
         
-        # Attention
+        # Use last hidden state from both directions
+        # hidden shape: (num_layers * 2, batch, hidden_size)
+        forward_hidden = hidden[-2]   # last layer, forward direction
+        backward_hidden = hidden[-1]  # last layer, backward direction
+        pooled = torch.cat([forward_hidden, backward_hidden], dim=1)
+        
+        # Attention over all timesteps
         attn_out, _ = self.attention(lstm_out, lstm_out, lstm_out)
+        attn_pooled = torch.mean(attn_out, dim=1)
         
-        # Global pooling
-        pooled = torch.mean(attn_out, dim=1)
-        
+        # Combine last hidden state + attention pooling
+        pooled = pooled + attn_pooled
+
         return self.fc(pooled)
 
 # --- Dataset ---
 class FSLSequenceDataset(Dataset):
     """Load preprocessed .npy sequences"""
     def __init__(self, split='train'):
+        self.split = split  # ✅ FIXED: store split so __getitem__ can access it
         self.samples, self.labels = [], []
         split_dir = DATA_DIR / split
         
@@ -130,8 +138,19 @@ class FSLSequenceDataset(Dataset):
     
     def __getitem__(self, idx):
         data = np.load(self.samples[idx]).astype(np.float32)
-        label = torch.tensor(self.labels[idx], dtype=torch.long)
-        return torch.from_numpy(data), label
+        # data shape: (30, 252) — position + velocity
+        
+        if self.split == 'train':
+            # Random temporal shift — teaches model gesture can start at different points
+            max_shift = 5
+            shift = np.random.randint(-max_shift, max_shift)
+            feat_dim = data.shape[1]  # ✅ FIXED: use actual dim, not hardcoded 126
+            if shift > 0:
+                data = np.concatenate([np.zeros((shift, feat_dim)), data[:-shift]], axis=0)
+            elif shift < 0:
+                data = np.concatenate([data[-shift:], np.zeros((-shift, feat_dim))], axis=0)
+        
+        return torch.from_numpy(data).float(), torch.tensor(self.labels[idx], dtype=torch.long)
 
 # --- Training Functions ---
 def evaluate_model(model, dataloader, criterion):
@@ -211,6 +230,7 @@ def train_with_tuning():
             print(f"\n🧪 Testing: LR={lr}, Dropout={dropout}")
             
             model = ImprovedLSTMModel(
+                input_size=INPUT_SIZE,   # ✅ FIXED: pass input_size explicitly
                 num_classes=num_classes, 
                 dropout=dropout
             ).to(DEVICE)
@@ -260,6 +280,7 @@ def train_with_tuning():
     print("="*60)
     
     final_model = ImprovedLSTMModel(
+        input_size=INPUT_SIZE,           # ✅ FIXED: pass input_size explicitly
         num_classes=num_classes,
         dropout=best_config['Dropout']
     ).to(DEVICE)
@@ -274,13 +295,9 @@ def train_with_tuning():
     training_history = []
     
     for epoch in range(1, 101):
-        # Train
         train_loss = train_epoch(final_model, train_loader, optimizer, criterion)
-        
-        # Validate
         val_loss, val_prec, val_rec, val_f1, _, _ = evaluate_model(final_model, val_loader, criterion)
         
-        # Record history
         training_history.append({
             'epoch': epoch,
             'train_loss': train_loss,
@@ -288,10 +305,8 @@ def train_with_tuning():
             'val_f1': val_f1
         })
         
-        # Print progress
         print(f"Epoch {epoch:3d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val F1: {val_f1:.4f}")
         
-        # Early stopping check
         early_stopping(val_loss, final_model)
         if early_stopping.early_stop:
             print(f"\n🛑 Early stopping triggered at epoch {epoch}")
@@ -326,6 +341,7 @@ def train_with_tuning():
         'classes': train_ds.classes,
         'class_to_idx': train_ds.class_to_idx,
         'num_classes': num_classes,
+        'input_size': INPUT_SIZE,
         'best_config': best_config,
         'test_metrics': {
             'loss': test_loss,
@@ -340,6 +356,7 @@ def train_with_tuning():
         'classes': train_ds.classes,
         'class_to_idx': train_ds.class_to_idx,
         'num_classes': num_classes,
+        'input_size': INPUT_SIZE,
         'best_hyperparameters': best_config,
         'test_performance': {
             'loss': float(test_loss),
