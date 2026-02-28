@@ -67,12 +67,10 @@ DRINK,Drink.
 DRINK BREAD,Drink Bread.
 DRINK COFFEE,Drink Coffee.
 DRINK COLD,Drink Cold.
-DRINK DEAF,Drink Deaf.
 DRINK EGG,Drink Egg.
 DRINK FRIDAY,Drink Friday.
 DRINK HERE,Drink Here.
 DRINK HOT,Drink Hot.
-DRINK I,Drink I.
 DRINK LONGANISA,Drink Longanisa.
 DRINK MAYBE,Drink Maybe.
 DRINK MONDAY,Drink Monday.
@@ -93,17 +91,14 @@ DRINK WEDNESDAY,Drink Wednesday.
 DRINK WHATEVER,Drink Whatever.
 DRINK WHITE,Drink White.
 DRINK YELLOW,Drink Yellow.
-DRINK YOU,Drink You.
 EAT,Eat.
 EAT BREAD,Eat Bread.
 EAT COFFEE,Eat Coffee.
 EAT COLD,Eat Cold.
-EAT DEAF,Eat Deaf.
 EAT EGG,Eat Egg.
 EAT FRIDAY,Eat Friday.
 EAT HERE,Eat Here.
 EAT HOT,Eat Hot.
-EAT I,Eat I.
 EAT LONGANISA,Eat Longanisa.
 EAT MAYBE,Eat Maybe.
 EAT MONDAY,Eat Monday.
@@ -124,7 +119,6 @@ EAT WEDNESDAY,Eat Wednesday.
 EAT WHATEVER,Eat Whatever.
 EAT WHITE,Eat White.
 EAT YELLOW,Eat Yellow.
-EAT YOU,Eat You.
 EGG,Egg.
 EGG BREAD,Egg and Bread.
 EGG EGG,Egg.
@@ -250,11 +244,71 @@ I,I.
 I CORRECT,I Correct.
 I DON'T KNOW,I Don'T Know.
 I DRINK,I Drink.
+I DRINK BREAD,I drink bread.
+I DRINK COFFEE,I drink coffee.
+I DRINK COLD,I drink cold.
+I DRINK EGG,I drink egg.
+I DRINK HERE,I drink here.
+I DRINK HOT,I drink hot.
+I DRINK LONGANISA,I drink longanisa.
+I DRINK MORE,I drink more.
+I DRINK ORANGE,I drink orange.
+I DRINK PINK,I drink pink.
+I DRINK RED,I drink red.
+I DRINK RICE,I drink rice.
+I DRINK VIOLET,I drink violet.
+I DRINK WHITE,I drink white.
+I DRINK YELLOW,I drink yellow.
 I EAT,I Eat.
+I EAT BREAD,I eat bread.
+I EAT COFFEE,I eat coffee.
+I EAT COLD,I eat cold.
+I EAT EGG,I eat egg.
+I EAT HERE,I eat here.
+I EAT HOT,I eat hot.
+I EAT LONGANISA,I eat longanisa.
+I EAT MORE,I eat more.
+I EAT ORANGE,I eat orange.
+I EAT PINK,I eat pink.
+I EAT RED,I eat red.
+I EAT RICE,I eat rice.
+I EAT VIOLET,I eat violet.
+I EAT WHITE,I eat white.
+I EAT YELLOW,I eat yellow.
 I KNOW,I know.
 I LIKE,I Like.
+I LIKE BREAD,I like bread.
+I LIKE COFFEE,I like coffee.
+I LIKE COLD,I like cold.
+I LIKE EGG,I like egg.
+I LIKE HERE,I like here.
+I LIKE HOT,I like hot.
+I LIKE LONGANISA,I like longanisa.
+I LIKE MORE,I like more.
+I LIKE ORANGE,I like orange.
+I LIKE PINK,I like pink.
+I LIKE RED,I like red.
+I LIKE RICE,I like rice.
+I LIKE VIOLET,I like violet.
+I LIKE WHITE,I like white.
+I LIKE YELLOW,I like yellow.
 I LIVE,I Live.
 I LOVE,I Love.
+I LOVE BREAD,I love bread.
+I LOVE COFFEE,I love coffee.
+I LOVE COLD,I love cold.
+I LOVE EGG,I love egg.
+I LOVE HERE,I love here.
+I LOVE HOT,I love hot.
+I LOVE LONGANISA,I love longanisa.
+I LOVE MORE,I love more.
+I LOVE ORANGE,I love orange.
+I LOVE PINK,I love pink.
+I LOVE RED,I love red.
+I LOVE RICE,I love rice.
+I LOVE VIOLET,I love violet.
+I LOVE WHITE,I love white.
+I LOVE YELLOW,I love yellow.
 I NO,I No.
 I STOP,I Stop.
 I UNDERSTAND,I understand.
@@ -263,8 +317,10 @@ I WANT BREAD,I want bread.
 I WANT COFFEE,I want coffee.
 I WANT COLD,I want cold.
 I WANT EGG,I want egg.
+I WANT HERE,I want here.
 I WANT HOT,I want hot.
 I WANT LONGANISA,I want longanisa.
+I WANT MORE,I want more.
 I WANT ORANGE,I want orange.
 I WANT ORANGE PINK,I want orange and pink.
 I WANT ORANGE RED,I want orange and red.
@@ -319,12 +375,10 @@ LIKE,Like.
 LIKE BREAD,Like Bread.
 LIKE COFFEE,Like Coffee.
 LIKE COLD,Like Cold.
-LIKE DEAF,Like Deaf.
 LIKE EGG,Like Egg.
 LIKE FRIDAY,Like Friday.
 LIKE HERE,Like Here.
 LIKE HOT,Like Hot.
-LIKE I,Like I.
 LIKE LONGANISA,Like Longanisa.
 LIKE MAYBE,Like Maybe.
 LIKE MONDAY,Like Monday.
@@ -345,17 +399,14 @@ LIKE WEDNESDAY,Like Wednesday.
 LIKE WHATEVER,Like Whatever.
 LIKE WHITE,Like White.
 LIKE YELLOW,Like Yellow.
-LIKE YOU,Like You.
 LIVE,Live.
 LIVE BREAD,Live Bread.
 LIVE COFFEE,Live Coffee.
 LIVE COLD,Live Cold.
-LIVE DEAF,Live Deaf.
 LIVE EGG,Live Egg.
 LIVE FRIDAY,Live Friday.
 LIVE HERE,Live Here.
 LIVE HOT,Live Hot.
-LIVE I,Live I.
 LIVE LONGANISA,Live Longanisa.
 LIVE MAYBE,Live Maybe.
 LIVE MONDAY,Live Monday.
@@ -376,7 +427,6 @@ LIVE WEDNESDAY,Live Wednesday.
 LIVE WHATEVER,Live Whatever.
 LIVE WHITE,Live White.
 LIVE YELLOW,Live Yellow.
-LIVE YOU,Live You.
 LONGANISA,Longanisa.
 LONGANISA BREAD,Longanisa and Bread.
 LONGANISA EGG,Longanisa and Egg.
@@ -386,12 +436,10 @@ LOVE,Love.
 LOVE BREAD,Love Bread.
 LOVE COFFEE,Love Coffee.
 LOVE COLD,Love Cold.
-LOVE DEAF,Love Deaf.
 LOVE EGG,Love Egg.
 LOVE FRIDAY,Love Friday.
 LOVE HERE,Love Here.
 LOVE HOT,Love Hot.
-LOVE I,Love I.
 LOVE LONGANISA,Love Longanisa.
 LOVE MAYBE,Love Maybe.
 LOVE MONDAY,Love Monday.
@@ -412,7 +460,6 @@ LOVE WEDNESDAY,Love Wednesday.
 LOVE WHATEVER,Love Whatever.
 LOVE WHITE,Love White.
 LOVE YELLOW,Love Yellow.
-LOVE YOU,Love You.
 MAYBE,Maybe.
 MAYBE BREAD,Maybe Bread.
 MAYBE COFFEE,Maybe Coffee.
@@ -575,12 +622,10 @@ STOP,Stop.
 STOP BREAD,Stop Bread.
 STOP COFFEE,Stop Coffee.
 STOP COLD,Stop Cold.
-STOP DEAF,Stop Deaf.
 STOP EGG,Stop Egg.
 STOP FRIDAY,Stop Friday.
 STOP HERE,Stop Here.
 STOP HOT,Stop Hot.
-STOP I,Stop I.
 STOP LONGANISA,Stop Longanisa.
 STOP MAYBE,Stop Maybe.
 STOP MONDAY,Stop Monday.
@@ -601,7 +646,6 @@ STOP WEDNESDAY,Stop Wednesday.
 STOP WHATEVER,Stop Whatever.
 STOP WHITE,Stop White.
 STOP YELLOW,Stop Yellow.
-STOP YOU,Stop You.
 SUNDAY,Sunday.
 SUNDAY FRIDAY,Sunday Friday.
 SUNDAY MONDAY,Sunday Monday.
@@ -691,12 +735,10 @@ WANT,Want.
 WANT BREAD,Want Bread.
 WANT COFFEE,Want Coffee.
 WANT COLD,Want Cold.
-WANT DEAF,Want Deaf.
 WANT EGG,Want Egg.
 WANT FRIDAY,Want Friday.
 WANT HERE,Want Here.
 WANT HOT,Want Hot.
-WANT I,Want I.
 WANT LONGANISA,Want Longanisa.
 WANT MAYBE,Want Maybe.
 WANT MONDAY,Want Monday.
@@ -717,7 +759,6 @@ WANT WEDNESDAY,Want Wednesday.
 WANT WHATEVER,Want Whatever.
 WANT WHITE,Want White.
 WANT YELLOW,Want Yellow.
-WANT YOU,Want You.
 WEDNESDAY,Wednesday.
 WEDNESDAY FRIDAY,Wednesday Friday.
 WEDNESDAY MONDAY,Wednesday Monday.
@@ -950,15 +991,90 @@ YOU,You.
 YOU CORRECT,You Correct.
 YOU DON'T KNOW,You Don'T Know.
 YOU DRINK,You Drink.
+YOU DRINK BREAD,You drink bread.
+YOU DRINK COFFEE,You drink coffee.
+YOU DRINK COLD,You drink cold.
+YOU DRINK EGG,You drink egg.
+YOU DRINK HERE,You drink here.
+YOU DRINK HOT,You drink hot.
+YOU DRINK LONGANISA,You drink longanisa.
+YOU DRINK MORE,You drink more.
+YOU DRINK ORANGE,You drink orange.
+YOU DRINK PINK,You drink pink.
+YOU DRINK RED,You drink red.
+YOU DRINK RICE,You drink rice.
+YOU DRINK VIOLET,You drink violet.
+YOU DRINK WHITE,You drink white.
+YOU DRINK YELLOW,You drink yellow.
 YOU EAT,You Eat.
+YOU EAT BREAD,You eat bread.
+YOU EAT COFFEE,You eat coffee.
+YOU EAT COLD,You eat cold.
+YOU EAT EGG,You eat egg.
+YOU EAT HERE,You eat here.
+YOU EAT HOT,You eat hot.
+YOU EAT LONGANISA,You eat longanisa.
+YOU EAT MORE,You eat more.
+YOU EAT ORANGE,You eat orange.
+YOU EAT PINK,You eat pink.
+YOU EAT RED,You eat red.
+YOU EAT RICE,You eat rice.
+YOU EAT VIOLET,You eat violet.
+YOU EAT WHITE,You eat white.
+YOU EAT YELLOW,You eat yellow.
 YOU KNOW,You know.
 YOU LIKE,You Like.
+YOU LIKE BREAD,You like bread.
+YOU LIKE COFFEE,You like coffee.
+YOU LIKE COLD,You like cold.
+YOU LIKE EGG,You like egg.
+YOU LIKE HERE,You like here.
+YOU LIKE HOT,You like hot.
+YOU LIKE LONGANISA,You like longanisa.
+YOU LIKE MORE,You like more.
+YOU LIKE ORANGE,You like orange.
+YOU LIKE PINK,You like pink.
+YOU LIKE RED,You like red.
+YOU LIKE RICE,You like rice.
+YOU LIKE VIOLET,You like violet.
+YOU LIKE WHITE,You like white.
+YOU LIKE YELLOW,You like yellow.
 YOU LIVE,You Live.
 YOU LOVE,You Love.
+YOU LOVE BREAD,You love bread.
+YOU LOVE COFFEE,You love coffee.
+YOU LOVE COLD,You love cold.
+YOU LOVE EGG,You love egg.
+YOU LOVE HERE,You love here.
+YOU LOVE HOT,You love hot.
+YOU LOVE LONGANISA,You love longanisa.
+YOU LOVE MORE,You love more.
+YOU LOVE ORANGE,You love orange.
+YOU LOVE PINK,You love pink.
+YOU LOVE RED,You love red.
+YOU LOVE RICE,You love rice.
+YOU LOVE VIOLET,You love violet.
+YOU LOVE WHITE,You love white.
+YOU LOVE YELLOW,You love yellow.
 YOU NO,You No.
 YOU STOP,You Stop.
 YOU UNDERSTAND,You understand.
 YOU WANT,You Want.
+YOU WANT BREAD,You want bread.
+YOU WANT COFFEE,You want coffee.
+YOU WANT COLD,You want cold.
+YOU WANT EGG,You want egg.
+YOU WANT HERE,You want here.
+YOU WANT HOT,You want hot.
+YOU WANT LONGANISA,You want longanisa.
+YOU WANT MORE,You want more.
+YOU WANT ORANGE,You want orange.
+YOU WANT PINK,You want pink.
+YOU WANT RED,You want red.
+YOU WANT RICE,You want rice.
+YOU WANT VIOLET,You want violet.
+YOU WANT WHITE,You want white.
+YOU WANT YELLOW,You want yellow.
 YOU WRONG,You are wrong.
 YOU YES,You Yes.
 YOURE WELCOME,Youre Welcome

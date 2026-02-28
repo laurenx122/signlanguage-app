@@ -32,7 +32,7 @@ Key features:
 
 import csv
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, Optional
+from typing import Dict, List, Tuple, Set
 
 
 # ----------------------------
@@ -225,7 +225,6 @@ def to_english(tokens: List[str],
 
     # Questions (simple)
     if toks[0] in questions:
-        # WHAT NAME -> What is your name?
         if joined == "WHAT NAME":
             return "What is your name?"
         if joined == "WHO YOU":
@@ -234,7 +233,6 @@ def to_english(tokens: List[str],
             return "Where do you live?"
         if len(toks) == 2 and toks[1] in identities:
             return f"{toks[0].title()} {toks[1].lower()}?"
-        # fallback question
         return f"{' '.join([t.title() for t in toks])}?"
 
     # I/YOU + KNOW/UNDERSTAND
@@ -247,7 +245,7 @@ def to_english(tokens: List[str],
         return f"Please {toks[1].lower()}."
 
     # I/YOU + WANT/LIKE/LOVE + X (+Y)
-    if len(toks) in (3, 4) and toks[0] in {"I", "YOU"} and toks[1] in {"WANT", "LIKE", "LOVE"}:
+    if len(toks) in (3, 4) and toks[0] in {"I", "YOU"} and toks[1] in {"WANT", "LIKE", "LOVE", "EAT", "DRINK"}:
         subj = "I" if toks[0] == "I" else "You"
         v = toks[1].lower()
 
@@ -255,18 +253,16 @@ def to_english(tokens: List[str],
         if len(objs) == 1:
             return f"{subj} {v} {objs[0].lower()}."
         if len(objs) == 2:
-            # add "and" between two objects (colors/foods/etc.)
             return f"{subj} {v} {objs[0].lower()} and {objs[1].lower()}."
-        # fallback
         return f"{subj} {v} " + " ".join([o.lower() for o in objs]) + "."
 
-    # FOOD pairs -> "Rice and egg."
+    # FOOD pairs
     if len(toks) == 2 and toks[0] in foods and toks[1] in foods:
         if toks[0] == toks[1]:
             return f"{toks[0].title()}."
         return f"{toks[0].title()} and {toks[1].title()}."
 
-    # COLOR pairs -> "Red and white."
+    # COLOR pairs
     if len(toks) == 2 and toks[0] in colors and toks[1] in colors:
         if toks[0] == toks[1]:
             return f"{toks[0].title()}."
@@ -276,7 +272,7 @@ def to_english(tokens: List[str],
     if len(toks) == 2 and toks[1] == "COFFEE" and toks[0] in {"HOT", "COLD"}:
         return f"{toks[0].title()} coffee."
 
-    # Default fallback: just show what was signed (title-cased) + period
+    # Default fallback
     return f"{' '.join([t.title() for t in toks])}."
 
 
@@ -297,7 +293,7 @@ def main() -> None:
     # sets for english formatting
     colors = set(cat(categories, "COLOR"))
     foods = set(cat(categories, "FOOD"))
-    days = set([w for w in all_words if w in ("MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY")])
+    days = set([w for w in all_words if w in ("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")])
     time_words = set([w for w in all_words if w in ("TODAY", "TOMORROW")])
     greetings = set(cat(categories, "GREETING"))
     questions = set(cat(categories, "QUESTION"))
@@ -306,13 +302,13 @@ def main() -> None:
     identities = set(cat(categories, "IDENTITY"))
 
     rel = cat(categories, "RELATIONSHIPS")
+    drinks = set(cat(categories, "DRINK"))
 
     phrases: Set[Tuple[str, str]] = set()
 
     # A) singles
     for w in all_words:
         eng = to_english([w], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
-        # ensure single outputs end nicely
         if eng and not eng.endswith((".", "!", "?", ",")) and w not in greetings:
             eng = eng + "."
         add_phrase(phrases, [w], eng)
@@ -328,8 +324,7 @@ def main() -> None:
                 eng = to_english([a, b], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
                 add_phrase(phrases, [a, b], eng)
 
-    # C) small set of conversation templates (3–4 tokens)
-    # 1) WHERE YOU LIVE, WHO YOU, WHAT NAME
+    # C) conversation templates
     if "WHERE" in questions and "YOU" in rel and "LIVE" in verbs:
         eng = to_english(["WHERE", "YOU", "LIVE"], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
         add_phrase(phrases, ["WHERE", "YOU", "LIVE"], eng)
@@ -342,19 +337,23 @@ def main() -> None:
         eng = to_english(["WHAT", "NAME"], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
         add_phrase(phrases, ["WHAT", "NAME"], eng)
 
-    # 2) PLEASE STOP
     if "PLEASE" in greetings and "STOP" in verbs:
         eng = to_english(["PLEASE", "STOP"], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
         add_phrase(phrases, ["PLEASE", "STOP"], eng)
 
-    # 3) I WANT X and I WANT X Y (colors/foods/drinks)
-    if "I" in rel and "WANT" in verbs:
-        # single object
-        for obj in list(colors | foods | set(cat(categories, "DRINK"))):
-            eng = to_english(["I", "WANT", obj], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
-            add_phrase(phrases, ["I", "WANT", obj], eng)
+    # D) General SVO templates: (I|YOU) + (WANT|LIKE|LOVE|EAT|DRINK) + object
+    subjects = [s for s in rel if s in {"I", "YOU"}]
+    core_verbs = [v for v in verbs if v in {"WANT", "LIKE", "LOVE", "EAT", "DRINK"}]
+    objects = list(colors | foods | drinks | set([m for m in modifiers if m in {"MORE", "HERE"}]))
 
-        # two objects (especially colors + colors)
+    for subj in subjects:
+        for v in core_verbs:
+            for obj in objects:
+                eng = to_english([subj, v, obj], colors, foods, days, time_words, greetings, questions, verbs, modifiers, identities)
+                add_phrase(phrases, [subj, v, obj], eng)
+
+    # E) Special: 4-token "I WANT COLOR COLOR" (kept from your original)
+    if "I" in rel and "WANT" in verbs:
         for c1 in colors:
             for c2 in colors:
                 if c1 == c2:
