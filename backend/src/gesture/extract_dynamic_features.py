@@ -131,16 +131,6 @@ def mirror_sequence(sequence):
     
     return mirrored
 
-def add_velocity_features(sequence):
-    """
-    Append frame-to-frame velocity to each frame's features.
-    Input:  (30, 126)
-    Output: (30, 252) — position + velocity
-    """
-    velocity = np.zeros_like(sequence)
-    velocity[1:] = sequence[1:] - sequence[:-1]
-    return np.concatenate([sequence, velocity], axis=1)
-
 def process_and_save():
     """Process all splits and save feature sequences"""
     
@@ -183,20 +173,16 @@ def process_and_save():
 
             
             for video_file in video_files:
-                # 1. Extract original sequence (30, 126)
+                # 1. Extract original sequence
                 original_seq = extract_and_visualize(video_file, class_name)
-
-                # 2. Mirror BEFORE adding velocity (mirror works on 126 features only)
-                if split == 'train':
-                    mirrored_seq = mirror_sequence(original_seq)
-                    mirrored_seq = add_velocity_features(mirrored_seq)  # (30, 252)
-                    np.save(dest_split_path / class_name / f"{video_file.stem}_aug.npy", mirrored_seq)
-                    aug_total += 1
-
-                # 3. Add velocity to original and save ONCE
-                original_seq = add_velocity_features(original_seq)  # (30, 252)
                 np.save(dest_split_path / class_name / f"{video_file.stem}_orig.npy", original_seq)
                 orig_total += 1
+                
+                # 2. Augment ONLY for training split
+                if split == 'train':
+                    mirrored_seq = mirror_sequence(original_seq)
+                    np.save(dest_split_path / class_name / f"{video_file.stem}_aug.npy", mirrored_seq)
+                    aug_total += 1
             
             print(f"✅ {class_name}: {len(video_files)} videos processed")
         
