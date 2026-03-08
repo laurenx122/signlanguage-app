@@ -53,7 +53,7 @@ export default function MainScreen() {
           setTypedText(q);
         }
 
-       if (data?.should_speak && Array.isArray(data?.letters_to_speak)) {
+        if (data?.should_speak && Array.isArray(data?.letters_to_speak)) {
           const word = data.letters_to_speak.join("");
 
           if (word.length > 0) {
@@ -77,13 +77,13 @@ export default function MainScreen() {
       startSpeechLoop();
     } else {
       shouldContinueSpeechRef.current = false;
-      stopRecordingAndSend(false);
+      stopRecordingAndSend(false, false);
       setIsRecording(false);
     }
 
     return () => {
       shouldContinueSpeechRef.current = false;
-      stopRecordingAndSend(false);
+      stopRecordingAndSend(false, false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -119,6 +119,7 @@ export default function MainScreen() {
   const startRecording = async () => {
     try {
       if (!shouldContinueSpeechRef.current) return;
+      if (recordingRef.current) return;
 
       setSttText((prev) =>
         prev && prev !== "Say something..." && prev !== "Listening..."
@@ -163,19 +164,23 @@ export default function MainScreen() {
           silenceTimerRef.current >= silenceSecondsToStop
         ) {
           if (isStoppingRef.current || isUploadingRef.current) return;
-          stopRecordingAndSend(true);
+          stopRecordingAndSend(true, true);
         }
       });
 
       await rec.startAsync();
     } catch (e) {
       console.log("startRecording error:", e);
+      recordingRef.current = null;
       setIsRecording(false);
       setSttText("Mic error.");
     }
   };
 
-  const stopRecordingAndSend = async (restartAfter: boolean) => {
+  const stopRecordingAndSend = async (
+    restartAfter: boolean,
+    shouldTranscribe: boolean
+  ) => {
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
 
@@ -197,7 +202,7 @@ export default function MainScreen() {
         return;
       }
 
-      if (!restartAfter) return;
+      if (!shouldTranscribe) return;
 
       if (isUploadingRef.current) return;
       isUploadingRef.current = true;
@@ -231,6 +236,17 @@ export default function MainScreen() {
       if (restartAfter && activeTab === "speech" && shouldContinueSpeechRef.current) {
         await startRecording();
       }
+    }
+  };
+
+  const handleSpeechToggle = async () => {
+    if (isRecording) {
+      // Manual stop -> transcribe immediately, but do not auto restart
+      await stopRecordingAndSend(false, true);
+    } else {
+      // Manual start
+      shouldContinueSpeechRef.current = true;
+      await startSpeechLoop();
     }
   };
 
@@ -290,7 +306,23 @@ export default function MainScreen() {
         ) : (
           <View style={styles.speechLayout}>
             <View style={styles.speechTopPanel}>
-              <AudioWave isRecording={isRecording} />
+              <View style={styles.waveRow}>
+                <View style={styles.waveWrapper}>
+                  <AudioWave isRecording={isRecording} />
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.toggleButton,
+                    isRecording ? styles.stopButton : styles.startButton,
+                  ]}
+                  onPress={handleSpeechToggle}
+                >
+                  <Text style={styles.toggleButtonText}>
+                    {isRecording ? "Stop" : "Start"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.speechBottomPanel}>
@@ -311,6 +343,8 @@ const TEXT = "#1D2A39";
 const MUTED = "#7C7A76";
 const TAB_BG = "#D9D4CF";
 const BORDER = "#D8D0C8";
+const GREEN = "#4CAF50";
+const RED = "#C85A54";
 
 const styles = StyleSheet.create({
   container: {
@@ -395,28 +429,63 @@ const styles = StyleSheet.create({
     flex: 0,
   },
 
-speechTopPanel: {
-  height: 160,
-  backgroundColor: PANEL,
-  borderRadius: 28,
-  borderWidth: 1,
-  borderColor: BORDER,
-  justifyContent: "center",
-  alignItems: "center",
-  padding: 20,
-},
+  speechTopPanel: {
+    height: 160,
+    backgroundColor: PANEL,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: BORDER,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
 
-speechBottomPanel: {
-  height: 340,
-  backgroundColor: PANEL,
-  borderRadius: 28,
-  borderWidth: 1,
-  borderColor: BORDER,
-  paddingHorizontal: 28,
-  paddingVertical: 20,
-  justifyContent: "flex-start",
-  marginTop: 18,
-},
+  waveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+  },
+
+  waveWrapper: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  toggleButton: {
+    minWidth: 92,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 18,
+  },
+
+  startButton: {
+    backgroundColor: GREEN,
+  },
+
+  stopButton: {
+    backgroundColor: RED,
+  },
+
+  toggleButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  speechBottomPanel: {
+    height: 340,
+    backgroundColor: PANEL,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    justifyContent: "flex-start",
+    marginTop: 18,
+  },
 
   translationLabel: {
     fontSize: 14,

@@ -10,6 +10,7 @@ engine = WhisperEngine(model_size="small.en")
 
 @router.post("/stt")
 async def stt(file: UploadFile = File(...)):
+    print("📥 STT received file:", file.filename, file.content_type)
     ext = os.path.splitext(file.filename)[1] or ".m4a"
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
@@ -18,7 +19,6 @@ async def stt(file: UploadFile = File(...)):
 
     try:
         text = engine.transcribe_file(tmp_path) or ""
-        # ✅ always JSON
         return JSONResponse(content={"text": text})
     finally:
         try:
