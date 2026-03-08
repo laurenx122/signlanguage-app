@@ -259,7 +259,6 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>ECHIFY</Text>
 
       <View style={styles.tabContainer}>
         <TouchableOpacity
