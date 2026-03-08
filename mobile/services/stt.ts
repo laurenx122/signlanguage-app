@@ -1,4 +1,4 @@
-const STT_URL = "http://10.191.173.64:8000/stt";
+const STT_URL = "http://192.168.1.5:8000/stt";
 
 export async function sendAudioForSTT(uri: string): Promise<string> {
   console.log("🎤 Uploading audio:", uri);

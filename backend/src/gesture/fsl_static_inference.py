@@ -13,7 +13,7 @@ from pathlib import Path
 import time
 from collections import deque, Counter
 
-_FRAME_SKIP = 2        # run mediapipe every 2 frames
+_FRAME_SKIP = 2
 _frame_counter = 0
 _last_landmarks = None
 should_speak = False
@@ -29,7 +29,6 @@ except ImportError:
         def speak(text):
             pass
 
-# Configuration
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 MODEL_PATH = PROJECT_ROOT / "models" / "lstm_static" / "best_fsl_lstm_model.pth"
 
@@ -41,16 +40,15 @@ _inv_label_map = None
 _last_prediction = None
 _prediction_count = 0
 
-# Letter decoding (commit letters during signing; speak only after a pause)
 _letter_queue = deque()
 _last_committed = None
 _last_commit_time = 0.0
-_commit_cooldown_s = 0.25   # minimum time between commits
+_commit_cooldown_s = 0.25
 _gap_seen = True
 _last_unknown_time = 0.0
-_gap_s = 0.12               # UNKNOWN duration to count as a separator
+_gap_s = 0.12
 _unknown_start = None
-_pause_to_speak_s = 0.8     # UNKNOWN duration that triggers speaking queued letters
+_pause_to_speak_s = 0.8
 
 
 class LSTMGestureModel(nn.Module):
@@ -87,15 +85,13 @@ class LSTMGestureModel(nn.Module):
 
 
 def is_left_hand(hand_landmarks, handedness):
-    """Determine if detected hand is left hand"""
     if handedness and handedness.classification:
         label = handedness.classification[0].label
-        return label == 'Left'
+        return label == "Left"
     return False
 
 
 def mirror_landmarks_horizontal(landmarks):
-    """Mirror landmarks horizontally for left->right conversion"""
     mirrored = landmarks.copy()
     for i in range(0, len(mirrored), 3):
         mirrored[i] = 1.0 - mirrored[i]
@@ -103,17 +99,11 @@ def mirror_landmarks_horizontal(landmarks):
 
 
 def normalize_landmarks(landmarks):
-    """
-    Normalize landmarks (wrist-centered, scale-invariant)
-    Same as preprocessing
-    """
     landmarks = np.array(landmarks).reshape(-1, 3)
 
-    # Center at wrist
     wrist = landmarks[0].copy()
     landmarks_centered = landmarks - wrist
 
-    # Scale by hand size
     distances = np.linalg.norm(landmarks_centered, axis=1)
     hand_size = np.max(distances)
 
@@ -121,7 +111,6 @@ def normalize_landmarks(landmarks):
         hand_size = 1.0
 
     landmarks_normalized = landmarks_centered / hand_size
-
     return landmarks_normalized.flatten()
 
 
@@ -135,30 +124,28 @@ def initialize_fsl_model():
         print("🔄 Loading FSL model...")
         checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
 
-        _inv_label_map = {v: k for k, v in checkpoint['class_to_idx'].items()}
-        num_classes = len(checkpoint['classes'])
-        feature_dim = checkpoint.get('feature_dim', 63)
+        _inv_label_map = {v: k for k, v in checkpoint["class_to_idx"].items()}
+        num_classes = len(checkpoint["classes"])
+        feature_dim = checkpoint.get("feature_dim", 63)
 
         print(f"📊 Classes: {num_classes}")
         print(f"📊 Feature dimension: {feature_dim}")
 
-        # Initialize model
         _model = LSTMGestureModel(
             input_size=feature_dim,
-            hidden_size=checkpoint.get('hidden_size', 128),
-            num_layers=checkpoint.get('num_layers', 2),
+            hidden_size=checkpoint.get("hidden_size", 128),
+            num_layers=checkpoint.get("num_layers", 2),
             num_classes=num_classes,
-            dropout=checkpoint.get('dropout', 0.3)
+            dropout=checkpoint.get("dropout", 0.3)
         ).to(DEVICE)
 
-        _model.load_state_dict(checkpoint['model_state_dict'])
+        _model.load_state_dict(checkpoint["model_state_dict"])
         _model.eval()
         print("✅ Model loaded successfully")
 
-        # Initialize MediaPipe
         _hands = mp.solutions.hands.Hands(
             static_image_mode=True,
-            max_num_hands=2,  # Detect both hands
+            max_num_hands=2,
             min_detection_confidence=0.5
         )
         print("✅ MediaPipe initialized (2 hands)")
@@ -171,7 +158,6 @@ def initialize_fsl_model():
 
 
 def extract_landmarks_from_frame(frame):
-    """Extract and normalize landmarks from frame (supports 2 hands)."""
     global _hands, _frame_counter, _last_landmarks
 
     if _hands is None:
@@ -179,7 +165,6 @@ def extract_landmarks_from_frame(frame):
 
     _frame_counter += 1
 
-    # Skip heavy MediaPipe work on some frames and reuse last landmarks
     if (_frame_counter % _FRAME_SKIP) != 0 and _last_landmarks is not None:
         return _last_landmarks
 
@@ -192,7 +177,6 @@ def extract_landmarks_from_frame(frame):
 
     all_landmarks = []
 
-    # Process up to 2 hands
     for i in range(min(len(results.multi_hand_landmarks), 2)):
         hand_landmarks = results.multi_hand_landmarks[i]
         handedness = results.multi_handedness[i] if results.multi_handedness else None
@@ -203,15 +187,12 @@ def extract_landmarks_from_frame(frame):
 
         landmarks = np.array(landmarks, dtype=np.float32)
 
-        # Convert left to right
         if is_left_hand(hand_landmarks, handedness):
             landmarks = mirror_landmarks_horizontal(landmarks)
 
-        # Normalize (same as preprocessing)
         landmarks = normalize_landmarks(landmarks)
         all_landmarks.extend(landmarks)
 
-    # Pad to 126 if only one hand detected
     while len(all_landmarks) < 126:
         all_landmarks.extend([0.0] * 63)
 
@@ -220,12 +201,6 @@ def extract_landmarks_from_frame(frame):
 
 
 def predict_fsl_static(frame_base64, confidence_threshold=0.6):
-    """Predict a single frame.
-
-    Decoding logic:
-    - Commit letters (once) while signing
-    - Speak only after a pause (sustained UNKNOWN), by returning letters_to_speak
-    """
     global _last_prediction, _prediction_count
     global _letter_queue, _last_committed, _last_commit_time
     global _gap_seen, _last_unknown_time, _unknown_start
@@ -234,25 +209,23 @@ def predict_fsl_static(frame_base64, confidence_threshold=0.6):
         if _model is None:
             initialize_fsl_model()
 
-        # Decode image
         img_bytes = base64.b64decode(frame_base64)
         np_arr = np.frombuffer(img_bytes, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if frame is None:
             return {
-                'success': False,
-                'prediction': "UNKNOWN",
-                'confidence': 0.0,
-                'message': "Failed to decode image",
-                'should_speak': False,
-                'letters_to_speak': [],
-                'committed_letter': None
+                "success": False,
+                "prediction": "UNKNOWN",
+                "confidence": 0.0,
+                "message": "Failed to decode image",
+                "should_speak": False,
+                "letters_to_speak": [],
+                "committed_letter": None
             }
 
         landmarks = extract_landmarks_from_frame(frame)
         if landmarks is None:
-            # No hands detected -> treat as UNKNOWN, which can also drive pause detection
             pred_class = "UNKNOWN"
             confidence = 0.0
         else:
@@ -270,26 +243,21 @@ def predict_fsl_static(frame_base64, confidence_threshold=0.6):
 
         now = time.time()
 
-        # --- Track UNKNOWN as a separator (gap) and as "pause" (longer UNKNOWN) ---
         if pred_class == "UNKNOWN":
-            # gap tracking
             if _last_unknown_time == 0.0:
                 _last_unknown_time = now
             elif (now - _last_unknown_time) >= _gap_s:
                 _gap_seen = True
 
-            # pause tracking
             if _unknown_start is None:
                 _unknown_start = now
         else:
             _last_unknown_time = 0.0
             _unknown_start = None
 
-        # --- Commit letters into queue (no speaking yet) ---
         committed_letter = None
         if pred_class != "UNKNOWN":
             if (now - _last_commit_time) >= _commit_cooldown_s:
-                # Allow committing the same letter again only if we've seen a gap
                 if pred_class != _last_committed or _gap_seen:
                     _letter_queue.append(pred_class)
                     committed_letter = pred_class
@@ -297,24 +265,30 @@ def predict_fsl_static(frame_base64, confidence_threshold=0.6):
                     _last_commit_time = now
                     _gap_seen = False
 
-        # --- Speak only after a pause (sustained UNKNOWN) ---
         letters_to_speak = []
         should_speak = False
+
         if _unknown_start is not None and (now - _unknown_start) >= _pause_to_speak_s:
             if len(_letter_queue) > 0:
                 letters_to_speak = list(_letter_queue)
+                word_to_speak = "".join(letters_to_speak)
+
+                # ✅ Coqui TTS output
+                speak(word_to_speak)
+
                 _letter_queue.clear()
                 should_speak = True
+
             _unknown_start = None
 
         return {
-            'success': True,
-            'prediction': pred_class,
-            'confidence': float(confidence),
-            'message': "Success",
-            'should_speak': should_speak,
-            'letters_to_speak': letters_to_speak,
-            'committed_letter': committed_letter
+            "success": True,
+            "prediction": pred_class,
+            "confidence": float(confidence),
+            "message": "Success",
+            "should_speak": should_speak,
+            "letters_to_speak": letters_to_speak,
+            "committed_letter": committed_letter
         }
 
     except Exception as e:
@@ -323,44 +297,38 @@ def predict_fsl_static(frame_base64, confidence_threshold=0.6):
         traceback.print_exc()
 
         return {
-            'success': False,
-            'prediction': "UNKNOWN",
-            'confidence': 0.0,
-            'message': f"Error: {str(e)}",
-            'should_speak': False,
-            'letters_to_speak': [],
-            'committed_letter': None
+            "success": False,
+            "prediction": "UNKNOWN",
+            "confidence": 0.0,
+            "message": f"Error: {str(e)}",
+            "should_speak": False,
+            "letters_to_speak": [],
+            "committed_letter": None
         }
 
 
 def predict_fsl_batch(frames_base64, confidence_threshold=0.6):
-    """Predict from a list of frames.
-
-    Note: This returns the most common prediction, and also forwards any
-    pause-triggered letters_to_speak events from predict_fsl_static.
-    """
     predictions = []
     confidences = []
     letters_to_speak = []
 
     for f in frames_base64:
         r = predict_fsl_static(f, confidence_threshold)
-        if r.get('should_speak') and r.get('letters_to_speak'):
-            # If a pause was detected during the batch, capture it.
-            letters_to_speak.extend(r['letters_to_speak'])
+        if r.get("should_speak") and r.get("letters_to_speak"):
+            letters_to_speak.extend(r["letters_to_speak"])
 
-        if r.get('success') and r.get('prediction') != "UNKNOWN":
-            predictions.append(r['prediction'])
-            confidences.append(r['confidence'])
+        if r.get("success") and r.get("prediction") != "UNKNOWN":
+            predictions.append(r["prediction"])
+            confidences.append(r["confidence"])
 
     if not predictions:
         return {
-            'success': True,
-            'prediction': "UNKNOWN",
-            'confidence': 0.0,
-            'message': "No valid predictions",
-            'should_speak': bool(letters_to_speak),
-            'letters_to_speak': letters_to_speak
+            "success": True,
+            "prediction": "UNKNOWN",
+            "confidence": 0.0,
+            "message": "No valid predictions",
+            "should_speak": bool(letters_to_speak),
+            "letters_to_speak": letters_to_speak
         }
 
     counter = Counter(predictions)
@@ -368,10 +336,10 @@ def predict_fsl_batch(frames_base64, confidence_threshold=0.6):
     avg_conf = float(np.mean([c for p, c in zip(predictions, confidences) if p == most_common]))
 
     return {
-        'success': True,
-        'prediction': most_common,
-        'confidence': avg_conf,
-        'message': f"Predicted from {len(predictions)}/{len(frames_base64)} frames",
-        'should_speak': bool(letters_to_speak),
-        'letters_to_speak': letters_to_speak
+        "success": True,
+        "prediction": most_common,
+        "confidence": avg_conf,
+        "message": f"Predicted from {len(predictions)}/{len(frames_base64)} frames",
+        "should_speak": bool(letters_to_speak),
+        "letters_to_speak": letters_to_speak
     }

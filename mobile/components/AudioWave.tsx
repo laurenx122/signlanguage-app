@@ -1,15 +1,15 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import LottieView from 'lottie-react-native';
+import React from "react";
+import { View, StyleSheet } from "react-native";
+import LottieView from "lottie-react-native";
 
 export default function AudioWave({ isRecording }: { isRecording: boolean }) {
   return (
-    <View style={styles.waveContainer}>
+    <View style={styles.container}>
       {isRecording ? (
         <LottieView
           autoPlay
           loop
-          source={require('../assets/audio-wave.json')} // You can find free audio wave JSONs on LottieFiles
+          source={require("../assets/audio-wave.json")}
           style={styles.wave}
         />
       ) : (
@@ -20,7 +20,22 @@ export default function AudioWave({ isRecording }: { isRecording: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  waveContainer: { height: 100, justifyContent: 'center', alignItems: 'center' },
-  wave: { width: '100%', height: 80 },
-  staticLine: { width: '80%', height: 2, backgroundColor: '#ddd' }
+  container: {
+    width: "100%",
+    height: 120,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  wave: {
+    width: 120,
+    height: 60,
+  },
+
+  staticLine: {
+    width: 120,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#d4d0cc",
+  },
 });
