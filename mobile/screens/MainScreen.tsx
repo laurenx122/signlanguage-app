@@ -1,7 +1,6 @@
 import { Audio } from "expo-av";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -89,32 +88,29 @@ export default function MainScreen() {
   }, [activeTab]);
 
   const startSpeechLoop = async () => {
-    try {
-      const { granted } = await Audio.requestPermissionsAsync();
+  try {
+    const { granted } = await Audio.requestPermissionsAsync();
 
-      if (!granted) {
-        Alert.alert(
-          "Permission Required",
-          "Please enable microphone access in settings to use Speech to Text."
-        );
-        setActiveTab("sign");
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      if (shouldContinueSpeechRef.current) {
-        await startRecording();
-      }
-    } catch (e) {
-      console.log("startSpeechLoop error:", e);
-      setSttText("Mic permission error.");
+    if (!granted) {
+      setSttText("Microphone permission denied.");
       setActiveTab("sign");
+      return;
     }
-  };
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+    });
+
+    if (shouldContinueSpeechRef.current) {
+      await startRecording();
+    }
+  } catch (e) {
+    console.log("startSpeechLoop error:", e);
+    setSttText("Mic permission error.");
+    setActiveTab("sign");
+  }
+};
 
   const startRecording = async () => {
     try {

@@ -5,7 +5,7 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 // ✅ now callback receives the full backend object
 let messageCallback: ((data: any) => void) | null = null;
 
-const WS_URL = "ws://192.168.1.5:8000/ws/fsl-simple";
+const WS_URL = "ws://10.15.58.64:8000/ws/fsl-simple";
 
 export const connectSocket = (onMessage: (data: any) => void) => {
   messageCallback = onMessage;
