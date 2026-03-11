@@ -1,4 +1,5 @@
 import { Audio } from "expo-av";
+import * as Speech from "expo-speech";
 import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
@@ -21,6 +22,7 @@ export default function MainScreen() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [sttText, setSttText] = useState("Say something...");
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef(0);
@@ -30,6 +32,46 @@ export default function MainScreen() {
   const isStoppingRef = useRef(false);
   const isUploadingRef = useRef(false);
   const shouldContinueSpeechRef = useRef(false);
+
+  const speakWord = (word: string) => {
+    const text = word.trim();
+    if (!text) return;
+
+    Speech.stop();
+    Speech.speak(text, {
+      language: "en-US",
+      pitch: 1.0,
+      rate: 0.9,
+    });
+  };
+
+  const requestMicPermission = async () => {
+    try {
+      const current = await Audio.getPermissionsAsync();
+
+      if (current.granted) {
+        setHasMicPermission(true);
+        return true;
+      }
+
+      const requested = await Audio.requestPermissionsAsync();
+      const granted = requested.granted;
+
+      setHasMicPermission(granted);
+
+      if (!granted) {
+        setSttText("Microphone permission denied.");
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      console.log("requestMicPermission error:", e);
+      setHasMicPermission(false);
+      setSttText("Mic permission error.");
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (activeTab === "sign") {
@@ -53,10 +95,11 @@ export default function MainScreen() {
         }
 
         if (data?.should_speak && Array.isArray(data?.letters_to_speak)) {
-          const word = data.letters_to_speak.join("");
+          const word = data.letters_to_speak.join("").trim();
 
           if (word.length > 0) {
             setFinalWord(word);
+            speakWord(word);
           }
 
           setTypedText("");
@@ -65,20 +108,28 @@ export default function MainScreen() {
       });
     } else {
       closeSocket();
+      Speech.stop();
     }
 
-    return () => closeSocket();
+    return () => {
+      closeSocket();
+      Speech.stop();
+    };
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab === "speech") {
-      shouldContinueSpeechRef.current = true;
-      startSpeechLoop();
-    } else {
-      shouldContinueSpeechRef.current = false;
-      stopRecordingAndSend(false, false);
-      setIsRecording(false);
-    }
+    const setupSpeechTab = async () => {
+      if (activeTab === "speech") {
+        shouldContinueSpeechRef.current = true;
+        await requestMicPermission();
+      } else {
+        shouldContinueSpeechRef.current = false;
+        await stopRecordingAndSend(false, false);
+        setIsRecording(false);
+      }
+    };
+
+    setupSpeechTab();
 
     return () => {
       shouldContinueSpeechRef.current = false;
@@ -88,34 +139,29 @@ export default function MainScreen() {
   }, [activeTab]);
 
   const startSpeechLoop = async () => {
-  try {
-    const { granted } = await Audio.requestPermissionsAsync();
+    try {
+      const granted = await requestMicPermission();
+      if (!granted) return;
 
-    if (!granted) {
-      setSttText("Microphone permission denied.");
-      setActiveTab("sign");
-      return;
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      if (shouldContinueSpeechRef.current) {
+        await startRecording();
+      }
+    } catch (e) {
+      console.log("startSpeechLoop error:", e);
+      setSttText("Mic permission error.");
     }
-
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-    });
-
-    if (shouldContinueSpeechRef.current) {
-      await startRecording();
-    }
-  } catch (e) {
-    console.log("startSpeechLoop error:", e);
-    setSttText("Mic permission error.");
-    setActiveTab("sign");
-  }
-};
+  };
 
   const startRecording = async () => {
     try {
       if (!shouldContinueSpeechRef.current) return;
       if (recordingRef.current) return;
+      if (!hasMicPermission) return;
 
       setSttText((prev) =>
         prev && prev !== "Say something..." && prev !== "Listening..."
@@ -237,10 +283,8 @@ export default function MainScreen() {
 
   const handleSpeechToggle = async () => {
     if (isRecording) {
-      // Manual stop -> transcribe immediately, but do not auto restart
       await stopRecordingAndSend(false, true);
     } else {
-      // Manual start
       shouldContinueSpeechRef.current = true;
       await startSpeechLoop();
     }
@@ -255,7 +299,6 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === "sign" && styles.activeTab]}
