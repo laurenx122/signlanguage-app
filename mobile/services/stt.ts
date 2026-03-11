@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 
-const STT_URL = "http://10.99.147.64:8000/stt";
+const STT_URL = "http://localhost:8000/stt";
 
 export async function sendAudioForSTT(uri: string): Promise<string> {
   console.log("🎤 Uploading audio:", uri);

@@ -1,5 +1,4 @@
 import { Audio } from "expo-av";
-import * as Speech from "expo-speech";
 import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
@@ -12,6 +11,8 @@ import { sendAudioForSTT } from "../services/stt";
 
 import AudioWave from "../components/AudioWave";
 import CameraComponent from "../components/CameraView";
+
+const TTS_SERVER_URL = "http://YOUR_PC_OR_SERVER_IP:8000/tts";
 
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<"sign" | "speech">("sign");
@@ -33,16 +34,73 @@ export default function MainScreen() {
   const isUploadingRef = useRef(false);
   const shouldContinueSpeechRef = useRef(false);
 
-  const speakWord = (word: string) => {
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  const stopCurrentPlayback = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    } catch (e) {
+      console.log("stopCurrentPlayback error:", e);
+    }
+  };
+
+  const speakWord = async (word: string) => {
     const text = word.trim();
     if (!text) return;
 
-    Speech.stop();
-    Speech.speak(text, {
-      language: "en-US",
-      pitch: 1.0,
-      rate: 0.9,
-    });
+    try {
+      await stopCurrentPlayback();
+
+      const response = await fetch(TTS_SERVER_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        console.log("TTS server error:", await response.text());
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data?.audio_url) {
+        console.log("No audio_url returned from TTS server");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: data.audio_url },
+        { shouldPlay: true }
+      );
+
+      soundRef.current = sound;
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded) return;
+
+        if (status.didJustFinish) {
+          sound
+            .unloadAsync()
+            .catch((e) => console.log("unloadAsync error:", e));
+          if (soundRef.current === sound) {
+            soundRef.current = null;
+          }
+        }
+      });
+    } catch (e) {
+      console.log("speakWord error:", e);
+    }
   };
 
   const requestMicPermission = async () => {
@@ -99,7 +157,7 @@ export default function MainScreen() {
 
           if (word.length > 0) {
             setFinalWord(word);
-            speakWord(word);
+            await speakWord(word);
           }
 
           setTypedText("");
@@ -108,12 +166,12 @@ export default function MainScreen() {
       });
     } else {
       closeSocket();
-      Speech.stop();
+      stopCurrentPlayback();
     }
 
     return () => {
       closeSocket();
-      Speech.stop();
+      stopCurrentPlayback();
     };
   }, [activeTab]);
 
