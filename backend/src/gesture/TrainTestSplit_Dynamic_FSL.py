@@ -129,8 +129,10 @@ def sample_dynamic_dataset():
     # 4. Split planning (70 / 15 / 15)
     min_samples = min(len(v) for _, v in class_video_counts.values())
 
-    train_count = int(min_samples * 0.7)
-    val_count = int(min_samples * 0.15)
+    # train_count = int(min_samples * 0.7)
+    # val_count = int(min_samples * 0.15)
+    train_count = 26
+    val_count = 5
     test_count = min_samples - train_count - val_count
 
     total_to_be_used = min_samples * len(matched_folders)
