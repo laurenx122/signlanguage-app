@@ -1,95 +1,194 @@
+//CameraView.tsx
 import React, { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import {
-  CameraView as ExpoCameraView,
-  useCameraPermissions,
-} from "expo-camera";
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { sendFrame } from "../services/socket";
+
+type CameraDevice = {
+  deviceId: string;
+  label: string;
+};
 
 interface CameraViewProps {
   onPrediction?: (prediction: string) => void;
 }
 
 export default function CameraView({ onPrediction }: CameraViewProps) {
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<any>(null);
-
-  const [isCapturing, setIsCapturing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [errorText, setErrorText] = useState("");
+  const [devices, setDevices] = useState<CameraDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const initializeCamera = async () => {
-      try {
-        if (permission?.granted === true) {
-          if (isMounted) setIsInitialized(true);
-          return;
-        }
-
-        if (permission?.canAskAgain !== false) {
-          await requestPermission();
-        }
-
-        if (isMounted) setIsInitialized(true);
-      } catch (error) {
-        console.error("Camera permission error:", error);
-        if (isMounted) setIsInitialized(true);
-      }
-    };
-
-    const timer = setTimeout(() => {
-      initializeCamera();
-    }, 300);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [permission, requestPermission]);
-
-  useEffect(() => {
-    if (!isInitialized || !permission?.granted) {
+    if (Platform.OS !== "web") {
+      setErrorText("This camera selector version is for web only.");
+      setIsInitialized(true);
       return;
     }
 
-    let isActive = true;
-    setIsCapturing(true);
+    let mounted = true;
+
+    const setup = async () => {
+      try {
+        // Ask permission first so labels become visible
+        const tempStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+
+        tempStream.getTracks().forEach((t) => t.stop());
+
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = allDevices
+          .filter((d) => d.kind === "videoinput")
+          .map((d) => ({
+            deviceId: d.deviceId,
+            label: d.label || "Unnamed camera",
+          }));
+
+        if (!mounted) return;
+
+        setDevices(videoInputs);
+
+        const preferred =
+          videoInputs.find((d) =>
+            d.label.toLowerCase().includes("a4tech"),
+          ) || videoInputs[0];
+
+        if (preferred) {
+          setSelectedDeviceId(preferred.deviceId);
+        }
+
+        setIsInitialized(true);
+      } catch (err: any) {
+        console.log("Camera init error:", err);
+        if (!mounted) return;
+        setErrorText(err?.message || "Failed to initialize camera.");
+        setIsInitialized(true);
+      }
+    };
+
+    setup();
+
+    return () => {
+      mounted = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isInitialized || !selectedDeviceId) return;
+
+    let active = true;
+
+    const startCamera = async () => {
+      try {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: selectedDeviceId },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        });
+
+        if (!active) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        setIsCapturing(true);
+        setErrorText("");
+      } catch (err: any) {
+        console.log("Start camera error:", err);
+        setErrorText(err?.message || "Failed to start selected camera.");
+        setIsCapturing(false);
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      active = false;
+    };
+  }, [isInitialized, selectedDeviceId]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isCapturing) return;
+
+    let active = true;
 
     const captureLoop = async () => {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 300));
 
-      while (isActive) {
+      while (active) {
         try {
-          if (!cameraRef.current) {
-            await new Promise((r) => setTimeout(r, 300));
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+
+          if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+            await new Promise((r) => setTimeout(r, 100));
             continue;
           }
 
-          const photo = await cameraRef.current.takePictureAsync({
-            base64: true,
-            quality: 0.7,
-            skipProcessing: true,
-          });
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
 
-          if (photo?.base64) {
-            sendFrame(photo.base64);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            await new Promise((r) => setTimeout(r, 100));
+            continue;
+          }
+
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.45);
+          const base64 = dataUrl.split(",")[1];
+
+          if (base64) {
+            sendFrame(base64);
           }
         } catch (err) {
           console.log("Frame capture error:", err);
         }
 
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 120));
       }
     };
 
     captureLoop();
 
     return () => {
-      isActive = false;
-      setIsCapturing(false);
+      active = false;
     };
-  }, [isInitialized, permission?.granted]);
+  }, [isCapturing]);
 
   if (!isInitialized) {
     return (
@@ -100,43 +199,93 @@ export default function CameraView({ onPrediction }: CameraViewProps) {
     );
   }
 
-  if (!permission?.granted) {
+  if (errorText) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Camera unavailable</Text>
-        <Text style={styles.loadingSubtext}>
-          Allow camera access once in Chromium.
-        </Text>
+        <Text style={styles.loadingText}>Camera error</Text>
+        <Text style={styles.loadingSubtext}>{errorText}</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ExpoCameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing="front"
-        mute={true}
-      />
+      {Platform.OS === "web" && (
+        <>
+          <View style={styles.selectWrap}>
+            <Text style={styles.selectLabel}>Camera:</Text>
+            <select
+              value={selectedDeviceId}
+              onChange={(e) => setSelectedDeviceId(e.target.value)}
+              style={selectStyle}
+            >
+              {devices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+          </View>
 
-      <View style={styles.statusIndicator}>
-        <View style={[styles.statusDot, isCapturing && styles.statusDotActive]} />
-        <Text style={styles.statusText}>
-          {isCapturing ? "Capturing..." : "Idle"}
-        </Text>
-      </View>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            style={styles.video as any}
+          />
+
+          <canvas ref={canvasRef} style={{ display: "none" }} />
+
+          <View style={styles.statusIndicator}>
+            <View
+              style={[styles.statusDot, isCapturing && styles.statusDotActive]}
+            />
+            <Text style={styles.statusText}>
+              {isCapturing ? "Capturing..." : "Idle"}
+            </Text>
+          </View>
+        </>
+      )}
     </View>
   );
 }
+
+const selectStyle: React.CSSProperties = {
+  height: 36,
+  minWidth: 260,
+  borderRadius: 8,
+  border: "1px solid #ccc",
+  padding: "0 10px",
+  backgroundColor: "#fff",
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
   },
-  camera: {
+  video: {
     flex: 1,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    backgroundColor: "#000",
+  },
+  selectWrap: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    zIndex: 20,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 10,
+    padding: 8,
+    gap: 6,
+  },
+  selectLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
   },
   loadingContainer: {
     flex: 1,

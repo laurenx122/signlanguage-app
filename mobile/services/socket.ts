@@ -1,22 +1,35 @@
-// services/socket.ts
+//socket.ts
+
 let socket: WebSocket | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
-// ✅ now callback receives the full backend object
 let messageCallback: ((data: any) => void) | null = null;
+let manuallyClosed = false;
 
-const WS_URL = "ws://localhost:8000/ws/fsl-simple";
+const getWsUrl = () => {
+  const host =
+    typeof window !== "undefined" ? window.location.hostname : "localhost";
+  return `ws://${host}:8000/ws/fsl-dynamic`;
+};
 
 export const connectSocket = (onMessage: (data: any) => void) => {
   messageCallback = onMessage;
+  manuallyClosed = false;
 
-  if (socket && socket.readyState === WebSocket.OPEN) return;
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  const WS_URL = getWsUrl();
 
   console.log("🌐 Connecting to WebSocket:", WS_URL);
   socket = new WebSocket(WS_URL);
 
   socket.onopen = () => {
-    console.log("✅ WebSocket connected");
+    console.log("✅ WebSocket connected:", WS_URL);
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;
@@ -28,17 +41,28 @@ export const connectSocket = (onMessage: (data: any) => void) => {
       const data = JSON.parse(e.data);
       if (messageCallback) messageCallback(data);
     } catch {
-      // fallback if server ever sends raw text
       if (messageCallback) messageCallback({ prediction: String(e.data) });
     }
   };
 
-  socket.onerror = () => console.log("❌ WebSocket error");
+  socket.onerror = () => {
+    console.log("❌ WebSocket error");
+  };
 
-  socket.onclose = () => {
-    console.log("🔌 WebSocket closed");
+  socket.onclose = (event) => {
+    console.log(
+      "🔌 WebSocket closed",
+      JSON.stringify({
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+        manuallyClosed,
+      }),
+    );
+
     socket = null;
-    if (!reconnectTimeout) {
+
+    if (!manuallyClosed && !reconnectTimeout && messageCallback) {
       reconnectTimeout = setTimeout(() => {
         reconnectTimeout = null;
         if (messageCallback) connectSocket(messageCallback);
@@ -47,20 +71,38 @@ export const connectSocket = (onMessage: (data: any) => void) => {
   };
 };
 
+let sentCount = 0;
+
 export const sendFrame = (frameBase64: string) => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (sentCount < 5) {
+      console.log("⚠️ sendFrame skipped: socket not open");
+    }
+    return false;
+  }
+
   try {
     socket.send(frameBase64);
+    sentCount += 1;
+
+    if (sentCount <= 5 || sentCount % 30 === 0) {
+      console.log(`📤 Sent frame #${sentCount}, length=${frameBase64.length}`);
+    }
+
     return true;
-  } catch {
+  } catch (e) {
+    console.log("❌ sendFrame failed", e);
     return false;
   }
 };
 
 export const closeSocket = () => {
+  manuallyClosed = true;
+
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
   reconnectTimeout = null;
   messageCallback = null;
+
   socket?.close();
   socket = null;
 };

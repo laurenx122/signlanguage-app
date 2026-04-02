@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from src.gesture.ws_fsl_server import router as fsl_router
+from src.gesture.ws_fsl_dynamic_server import router as fsl_router
 from src.stt.stt_http import router as stt_router
 from session_logger import SessionLogger
 
