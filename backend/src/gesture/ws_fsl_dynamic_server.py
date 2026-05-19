@@ -304,7 +304,7 @@ async def fsl_dynamic_endpoint(websocket: WebSocket):
         # ── Cleanup/reset ──────────────────────────────────────────────────
         reset_buffer()
         builder.reset()
-        #Uncomment Later
+        
         logger.end_session() 
 
         if frame_latencies_ms:

@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from train_dynamic_fsl import ImprovedLSTMModel, FSLSequenceDataset
 import warnings
 
-# Suppress the sklearn warnings
 warnings.filterwarnings('ignore', category=UserWarning)
 
 # --- Configuration ---
@@ -28,12 +27,12 @@ def evaluate_dynamic_model():
     # 1. Load Model Weights
     checkpoint = torch.load(MODEL_PATH, map_location='cpu')
     
-    # 2. Load Class Names from JSON (since they aren't in the .pth file)
+    # 2. Load Class Names from JSON 
     import json
     label_map_path = PROJECT_ROOT / 'models' / 'lstm_dynamic_final' / 'label_mapping.json'
     with open(label_map_path, 'r') as f:
         label_dict = json.load(f)
-        # Sort by value (0, 1, 2...) to match model output indices
+        
         classes = [k for k, v in sorted(label_dict.items(), key=lambda item: item[1])]
     
     tuning_df = pd.read_csv(TUNING_CSV) if TUNING_CSV.exists() else None
@@ -100,8 +99,7 @@ def evaluate_dynamic_model():
         • Val F1: {last_epoch['val_f1']:.4f} ({last_epoch['val_f1']*100:.2f}%)
         """
     
-    # Report 1: Project Summary Text
-    # Find the actual F1 column name (handles case sensitivity)
+    
     
     summary_text = f"""
 ============================================================

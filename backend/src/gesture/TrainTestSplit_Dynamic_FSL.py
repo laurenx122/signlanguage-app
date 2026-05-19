@@ -20,7 +20,6 @@ TRAIN_DIR = BASE_DEST / 'train'
 VAL_DIR = BASE_DEST / 'val'
 TEST_DIR = BASE_DEST / 'test'
 
-# ← Path to your labels CSV (id, label, category)
 LABELS_CSV = PROJECT_ROOT / 'data' / 'raw' / 'fsl_dynamic' /'labels.csv'
 
 RANDOM_SEED = 42
@@ -47,7 +46,7 @@ def load_labels_csv(csv_path):
 
         reader = csv.reader(f)
         if has_header:
-            next(reader)  # skip header row
+            next(reader) 
 
         for row in reader:
             if len(row) < 2:
@@ -122,7 +121,7 @@ def sample_dynamic_dataset():
         videos = []
         for ext in video_extensions:
             videos.extend(list(folder.glob(ext)))
-        videos = list(set(videos))  # deduplicate
+        videos = list(set(videos)) 
         class_video_counts[folder.name] = (folder, videos)
         total_videos_in_source += len(videos)
 
@@ -158,7 +157,7 @@ def sample_dynamic_dataset():
         val_vids = balanced[train_count:train_count + val_count]
         test_vids = balanced[train_count + val_count:]
 
-        # Use folder ID as subfolder name (keeps consistency with your model)
+        # Use folder ID as subfolder name 
         train_class_dir = TRAIN_DIR / folder_id_str
         val_class_dir = VAL_DIR / folder_id_str
         test_class_dir = TEST_DIR / folder_id_str

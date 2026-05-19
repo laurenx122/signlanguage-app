@@ -420,7 +420,7 @@ def train_with_tuning():
     # =========================================================
     # PHASE 2: MAIN TRAINING
     # [FIX 10] Gap monitoring added — prints (train acc - val F1)
-    #          each epoch so you can see overfit developing in real time.
+    #          each epoch so we can see overfit developing in real time.
     #          A growing gap (>0.2) is the signal to stop or increase dropout.
     # =========================================================
     print("\n" + "=" * 60)
@@ -436,9 +436,9 @@ def train_with_tuning():
     optimizer = optim.AdamW(
         final_model.parameters(),
         lr           = best_config['LR'],
-        weight_decay = 0.01,              # [FIX 4]
+        weight_decay = 0.01,              
     )
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # [FIX 8]
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -464,7 +464,7 @@ def train_with_tuning():
         scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]['lr']
 
-        # [FIX 10] Overfitting gap monitor
+        # Overfitting gap monitor
         train_acc = get_train_accuracy(final_model, train_loader)
         gap       = train_acc - val_f1
         gap_warn  = "  ⚠️  OVERFIT" if gap > 0.25 else ""
@@ -512,7 +512,7 @@ def train_with_tuning():
     _, _, _, gate_f1, _, _ = evaluate_model(final_model, val_loader, criterion)
     print(f"   Best checkpoint val F1: {gate_f1:.4f}")
 
-    # [FIX 6] Gate check
+    # Gate check
     FINE_TUNE_GATE = 0.65
     if gate_f1 < FINE_TUNE_GATE:
         print(
@@ -528,7 +528,7 @@ def train_with_tuning():
         ft_optimizer = optim.AdamW(
             final_model.parameters(),
             lr           = finetune_lr,
-            weight_decay = 0.01,          # [FIX 4]
+            weight_decay = 0.01,      
         )
         early_stopping.reset(new_patience=5)
         finetune_history = []
